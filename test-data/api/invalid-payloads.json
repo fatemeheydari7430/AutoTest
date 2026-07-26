@@ -1,0 +1,17 @@
+[
+  {
+    "label": "missing required field (name)",
+    "payload": { "price": 100, "category": "tools" },
+    "expectedStatus": 400
+  },
+  {
+    "label": "invalid field value (negative price)",
+    "payload": { "name": "Bad Widget", "price": -1, "category": "tools" },
+    "expectedStatus": 400
+  },
+  {
+    "label": "empty body",
+    "payload": {},
+    "expectedStatus": 400
+  }
+]

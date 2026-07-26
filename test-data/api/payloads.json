@@ -1,0 +1,5 @@
+[
+  { "name": "Widget Alpha", "price": 100, "category": "tools" },
+  { "name": "Widget Beta", "price": 250, "category": "supplies" },
+  { "name": "Widget Gamma", "price": 0, "category": "tools" }
+]

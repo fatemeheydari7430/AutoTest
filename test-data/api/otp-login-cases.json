@@ -1,0 +1,5 @@
+[
+  { "label": "wrong otp", "form": { "otp": "0000", "mobile": "528888888" }, "expectedStatus": [400, 401, 403] },
+  { "label": "missing otp field", "form": { "mobile": "528888888" }, "expectedStatus": [400, 403, 422] },
+  { "label": "missing mobile field", "form": { "otp": "1111" }, "expectedStatus": [400, 403, 422] }
+]

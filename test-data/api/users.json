@@ -1,0 +1,5 @@
+[
+  { "role": "admin", "label": "valid admin user", "expectSuccess": true },
+  { "role": "user", "label": "valid regular user", "expectSuccess": true },
+  { "role": "invalid", "label": "unknown user", "expectSuccess": false }
+]

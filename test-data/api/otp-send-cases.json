@@ -1,0 +1,5 @@
+[
+  { "label": "missing mobile field", "payload": {}, "expectedStatus": [400, 422] },
+  { "label": "invalid mobile format (non-numeric)", "payload": { "mobile": "abc" }, "expectedStatus": [400, 422] },
+  { "label": "non-existent mobile", "payload": { "mobile": "000000000" }, "expectedStatus": [200, 202, 400, 404, 422] }
+]
