@@ -11,7 +11,8 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "report": "playwright show-report",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "cache:clear": "node -e \"require('node:fs').rmSync('.auth',{recursive:true,force:true});console.log('token cache cleared')\""
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",

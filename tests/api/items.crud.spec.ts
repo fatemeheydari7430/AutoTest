@@ -6,12 +6,12 @@ import payloadsData from '../../test-data/api/payloads.json';
 type Payload = Record<string, unknown>;
 const resource = config.resource.basePath;
 const createPayload = (payloadsData as Payload[])[0];
+const t = config.resource.enabled ? test : test.skip;
 
 let createdId: string | undefined;
 
 test.describe.serial('Items CRUD lifecycle', () => {
-  test('create returns 201 with an id', async ({ authRequest }) => {
-    test.skip(!config.resource.enabled, 'RESOURCE_ENABLED is false');
+  t('create returns 201 with an id', async ({ authRequest }) => {
     const res = await authRequest.post(resource, { data: createPayload });
     expectStatus(res, 201);
 
@@ -20,15 +20,13 @@ test.describe.serial('Items CRUD lifecycle', () => {
     expect(createdId, 'resource id returned').toBeTruthy();
   });
 
-  test('get by id returns 200', async ({ authRequest }) => {
-    test.skip(!config.resource.enabled, 'RESOURCE_ENABLED is false');
+  t('get by id returns 200', async ({ authRequest }) => {
     test.skip(!createdId, 'create must succeed first');
     const res = await authRequest.get(`${resource}/${createdId}`);
     expectStatus(res, 200);
   });
 
-  test('update by id returns 200', async ({ authRequest }) => {
-    test.skip(!config.resource.enabled, 'RESOURCE_ENABLED is false');
+  t('update by id returns 200', async ({ authRequest }) => {
     test.skip(!createdId, 'create must succeed first');
     const res = await authRequest.patch(`${resource}/${createdId}`, {
       data: { ...createPayload, name: `${String(createPayload.name)} (updated)` },
@@ -36,8 +34,7 @@ test.describe.serial('Items CRUD lifecycle', () => {
     expectStatus(res, 200);
   });
 
-  test('delete by id returns 204', async ({ authRequest }) => {
-    test.skip(!config.resource.enabled, 'RESOURCE_ENABLED is false');
+  t('delete by id returns 204', async ({ authRequest }) => {
     test.skip(!createdId, 'create must succeed first');
     const res = await authRequest.delete(`${resource}/${createdId}`);
     expectStatus(res, 204);

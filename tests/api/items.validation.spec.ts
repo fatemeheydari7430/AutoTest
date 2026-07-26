@@ -11,24 +11,22 @@ type InvalidCase = {
 const cases = casesData as InvalidCase[];
 
 const resource = config.resource.basePath;
+const t = config.resource.enabled ? test : test.skip;
 
 test.describe('Items / validation', () => {
   for (const c of cases) {
-    test(`rejects ${c.label} with ${c.expectedStatus}`, async ({ authRequest }) => {
-      test.skip(!config.resource.enabled, 'RESOURCE_ENABLED is false');
+    t(`rejects ${c.label} with ${c.expectedStatus}`, async ({ authRequest }) => {
       const res = await authRequest.post(resource, { data: c.payload });
       expectStatus(res, c.expectedStatus);
     });
   }
 
-  test('get nonexistent id returns 404', async ({ authRequest }) => {
-    test.skip(!config.resource.enabled, 'RESOURCE_ENABLED is false');
+  t('get nonexistent id returns 404', async ({ authRequest }) => {
     const res = await authRequest.get(`${resource}/99999999`);
     expect([404, 400]).toContain(res.status());
   });
 
-  test('list supports pagination params', async ({ authRequest }) => {
-    test.skip(!config.resource.enabled, 'RESOURCE_ENABLED is false');
+  t('list supports pagination params', async ({ authRequest }) => {
     const res = await authRequest.get(`${resource}?page=0&size=1`);
     expect([200, 400, 404]).toContain(res.status());
     if (res.ok()) {

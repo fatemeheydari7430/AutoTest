@@ -2,19 +2,17 @@ import { test, expect } from '@/fixtures';
 import { config } from '@/config';
 
 const endpoint = config.profile.endpoint;
+const t = endpoint ? test : test.skip;
 
 test.describe('Profile / protected endpoint', () => {
-  test('authenticated access succeeds', async ({ authRequest }) => {
-    test.skip(!endpoint, 'PROFILE_ENDPOINT not configured');
+  t('authenticated access succeeds', async ({ authRequest }) => {
     const res = await authRequest.get(endpoint);
-
     expect(res.ok(), `${res.status()} ${res.statusText()}`).toBeTruthy();
     const body = await res.json();
     expect(typeof body).toBe('object');
   });
 
-  test('unauthenticated access is rejected', async ({ request }) => {
-    test.skip(!endpoint, 'PROFILE_ENDPOINT not configured');
+  t('unauthenticated access is rejected', async ({ request }) => {
     const res = await request.get(`${config.api.baseURL}${endpoint}`);
     expect([401, 403]).toContain(res.status());
   });
