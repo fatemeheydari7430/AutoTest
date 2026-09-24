@@ -246,14 +246,28 @@ async function main(): Promise<void> {
   page.on('request', (req) => {
     const type = req.resourceType();
     if (type === 'xhr' || type === 'fetch') {
-      log(`req ${req.method()} ${req.url()}`);
+      let suffix = '';
+      if (process.env.EXPLORE_LOG_BODIES === '1' && req.postData()) {
+        suffix = ` body=${req.postData()!.slice(0, 600)}`;
+      }
+      log(`req ${req.method()} ${req.url()}${suffix}`);
     }
   });
-  page.on('response', (res) => {
+  page.on('response', async (res) => {
     const req = res.request();
     const type = req.resourceType();
-    if ((type === 'xhr' || type === 'fetch') && res.status() >= 400) {
-      log(`res ${res.status()} ${req.method()} ${res.url()}`);
+    const isApi = /alpha-api/.test(req.url());
+    const logBodies = process.env.EXPLORE_LOG_BODIES === '1';
+    if ((type === 'xhr' || type === 'fetch') && (res.status() >= 400 || (logBodies && isApi))) {
+      let suffix = '';
+      if (logBodies && isApi && res.status() < 400) {
+        try {
+          suffix = ` body=${(await res.text()).slice(0, 400)}`;
+        } catch {
+          // ignore
+        }
+      }
+      log(`res ${res.status()} ${req.method()} ${req.url()}${suffix}`);
     }
   });
   page.on('pageerror', (err) => log(`pageerror: ${err.message}`));

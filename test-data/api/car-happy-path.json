@@ -1,0 +1,22 @@
+{
+  "leadType": "RENEW",
+  "informationSource": "MANUAL",
+  "vehicle": {
+    "make": "Toyota",
+    "model": "COROLLA",
+    "year": 2024
+  },
+  "carDetails": {
+    "isGcc": true,
+    "isPersonallyModified": false,
+    "isForPersonalUse": true
+  },
+  "emirate": "dubai",
+  "driver": {
+    "country": "India",
+    "dateOfBirth": "1995-06-15"
+  },
+  "drivingExperience": "MORE_THAN_FIVE_YEAR",
+  "claimFreeYear": 4,
+  "claimFreeYearThreshold": true
+}

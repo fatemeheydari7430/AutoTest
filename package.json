@@ -11,7 +11,9 @@
     "test:e2e:ui": "playwright test --project=e2e-chromium --ui",
     "test:car:ui": "playwright test --project=e2e-chromium tests/e2e/car-purchase.spec.ts --ui",
     "test:car": "playwright test --project=e2e-chromium tests/e2e/car-purchase.spec.ts --retries=0",
+    "test:car:non-gcc": "cross-env CAR_SCENARIO=non-gcc playwright test --project=e2e-chromium tests/e2e/car-purchase.spec.ts --retries=0",
     "test:health": "playwright test --project=e2e-chromium tests/e2e/health-purchase.spec.ts --retries=0",
+    "test:health:under4000": "cross-env HEALTH_SCENARIO=under4000 playwright test --project=e2e-chromium tests/e2e/health-purchase.spec.ts --retries=0",
     "test:health:ui": "playwright test --project=e2e-chromium tests/e2e/health-purchase.spec.ts --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "@types/node": "^26.1.1",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "typescript": "^7.0.2"
   }

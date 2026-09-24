@@ -37,6 +37,14 @@ export const config = {
     endpoint: process.env.HEALTH_URL ?? '',
   },
 
+  healthInsurance: {
+    basePath: process.env.HEALTH_INSURANCE_BASE_PATH ?? '/health/v1',
+  },
+
+  carInsurance: {
+    basePath: process.env.CAR_INSURANCE_BASE_PATH ?? '/motor',
+  },
+
   profile: {
     endpoint: process.env.PROFILE_ENDPOINT ?? '',
   },

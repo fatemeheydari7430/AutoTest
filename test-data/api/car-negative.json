@@ -1,0 +1,9 @@
+{
+  "invalidYear": 1800,
+  "invalidEmirate": "atlantis",
+  "invalidDateOfBirth": "2099-01-01",
+  "invalidDrivingExperience": "SUPER_DRIVER",
+  "invalidClaimFreeYear": 99,
+  "invalidQuoteId": 999999999,
+  "invalidTrackingCode": "invalid-tracking-code"
+}

@@ -1,0 +1,10 @@
+{
+  "planType": "INDIVIDUAL",
+  "gender": "MALE",
+  "emirate": "dubai",
+  "salaryRange": "MORE_THAN_4000",
+  "memberType": "YOURSELF",
+  "dateOfBirth": "1995-06-15",
+  "hasMedicalCondition": false,
+  "isAnyMemberPregnant": false
+}

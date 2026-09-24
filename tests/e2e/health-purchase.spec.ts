@@ -1,11 +1,30 @@
 import { test } from '@/fixtures/ui';
-import purchaseData from '../../test-data/e2e/health-purchase.json';
+import scenarios from '../../test-data/e2e/health-scenarios.json';
+
+interface HealthScenario {
+  insureFor: string;
+  gender: string;
+  emirate: string;
+  salaryRange: string;
+  members: string[];
+  dateOfBirth: { year: string; month: string; day: string };
+  medicalCondition: boolean;
+}
+
+const scenarioName = process.env.HEALTH_SCENARIO ?? 'default';
+const scenario = (scenarios as Record<string, HealthScenario>)[scenarioName];
+
+if (!scenario) {
+  throw new Error(
+    `Unknown HEALTH_SCENARIO "${scenarioName}". Available: ${Object.keys(scenarios).join(', ')}`,
+  );
+}
 
 test.describe('Health insurance purchase', () => {
   test.setTimeout(300_000);
 
   test(
-    'reaches the payment screen for a health insurance purchase',
+    `reaches the payment screen for a health insurance purchase [${scenarioName}]`,
     { tag: ['@health', '@smoke'] },
     async ({
       appAuth,
@@ -16,14 +35,14 @@ test.describe('Health insurance purchase', () => {
     }) => {
       await appAuth.login();
 
-      await healthInsurancePage.startIndividualCoverage();
+      await healthInsurancePage.startCoverage(scenario.insureFor);
 
-      await healthQuestionnairePage.answerGender(purchaseData.gender);
-      await healthQuestionnairePage.answerEmirate(purchaseData.emirate);
-      await healthQuestionnairePage.answerSalary(purchaseData.salary);
-      await healthQuestionnairePage.selectMembers(purchaseData.members);
-      await healthQuestionnairePage.enterDateOfBirth(purchaseData.dateOfBirth);
-      await healthQuestionnairePage.answerMedicalCondition(purchaseData.medicalCondition);
+      await healthQuestionnairePage.answerGender(scenario.gender);
+      await healthQuestionnairePage.answerEmirate(scenario.emirate);
+      await healthQuestionnairePage.answerSalary(scenario.salaryRange);
+      await healthQuestionnairePage.selectMembers(scenario.members);
+      await healthQuestionnairePage.enterDateOfBirth(scenario.dateOfBirth);
+      await healthQuestionnairePage.answerMedicalCondition(scenario.medicalCondition);
 
       await healthQuotesPage.expectLoaded();
       await healthQuotesPage.selectFirstPlan();

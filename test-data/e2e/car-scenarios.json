@@ -1,0 +1,52 @@
+{
+  "default": {
+    "vehicle": {
+      "brand": "Toyota",
+      "model": "COROLLA",
+      "year": "2024",
+      "trim": "GLI-1.6 L-121 HP"
+    },
+    "specification": "GCC",
+    "emirate": "dubai",
+    "driver": {
+      "nationality": "India",
+      "dateOfBirth": {
+        "year": "1995",
+        "month": "June",
+        "day": "15"
+      }
+    },
+    "history": {
+      "drivingExperience": "MORE_THAN_FIVE_YEAR",
+      "claims": "CLAIM_FREE_OVER_4"
+    },
+    "contact": {
+      "email": "qa.testing@example.com"
+    }
+  },
+  "non-gcc": {
+    "vehicle": {
+      "brand": "Toyota",
+      "model": "COROLLA",
+      "year": "2024",
+      "trim": "GLI-1.6 L-121 HP"
+    },
+    "specification": "NON_GCC",
+    "emirate": "dubai",
+    "driver": {
+      "nationality": "India",
+      "dateOfBirth": {
+        "year": "1995",
+        "month": "June",
+        "day": "15"
+      }
+    },
+    "history": {
+      "drivingExperience": "MORE_THAN_FIVE_YEAR",
+      "claims": "CLAIM_FREE_OVER_4"
+    },
+    "contact": {
+      "email": "qa.testing@example.com"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "default": {
+    "insureFor": "INDIVIDUAL",
+    "gender": "MALE",
+    "emirate": "dubai",
+    "salaryRange": "MORE_THAN_4000",
+    "members": ["YOURSELF"],
+    "dateOfBirth": {
+      "year": "1995",
+      "month": "June",
+      "day": "15"
+    },
+    "medicalCondition": false
+  },
+  "under4000": {
+    "insureFor": "INDIVIDUAL",
+    "gender": "MALE",
+    "emirate": "dubai",
+    "salaryRange": "LESS_THAN_4000",
+    "members": ["YOURSELF"],
+    "dateOfBirth": {
+      "year": "1995",
+      "month": "June",
+      "day": "15"
+    },
+    "medicalCondition": false
+  }
+}
