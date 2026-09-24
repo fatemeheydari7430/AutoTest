@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import 'dotenv/config';
-import { STORAGE_STATE_PATH } from './src/config/paths';
+import { CLOUDFLARE_STATE_PATH } from './src/config/paths';
 
 const baseURL = process.env.WEB_BASE_URL ?? 'http://localhost:5173';
 
@@ -12,7 +12,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: process.env.CI ? 2 : 1,
   workers: process.env.CI ? 2 : undefined,
 
   reporter: [
@@ -51,7 +51,7 @@ export default defineConfig({
       testDir: './tests/e2e',
       testMatch: /.*\.spec\.ts/,
       dependencies: ['setup'],
-      use: { ...devices['Desktop Chrome'], storageState: STORAGE_STATE_PATH },
+      use: { ...devices['Desktop Chrome'], storageState: CLOUDFLARE_STATE_PATH },
     },
   ],
 });

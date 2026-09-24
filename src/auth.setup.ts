@@ -1,35 +1,36 @@
-import { test as setup, expect } from '@playwright/test';
-import { mkdirSync, rmSync } from 'node:fs';
+import { test as setup } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { config } from '@/config';
-import { STORAGE_STATE_PATH } from '@/config/paths';
+import { CLOUDFLARE_STATE_PATH } from '@/config/paths';
 
-const origin = encodeURIComponent(config.web.baseURL);
-const authUrl = `${config.web.baseURL}/auth/?space=vault&callback=%2F&origin=${origin}`;
-const loginUrl = /^.*\/auth.*step=otp/;
+const CLOUDFLARE_COOKIE = /^CF[_-]/i;
+const CLOUDFLARE_DOMAIN = /cloudflareaccess\.com$/i;
 
-setup('authenticate via UI (OTP) and save storage state', async ({ page }) => {
-  mkdirSync(dirname(STORAGE_STATE_PATH), { recursive: true });
-  rmSync(STORAGE_STATE_PATH, { force: true });
+/**
+ * Capture ONLY the Cloudflare Access / Azure AD cookies needed to reach the app.
+ * The app's own session (access token, lead, car-insurance state) is deliberately
+ * excluded, so every test run authenticates inside the app from scratch.
+ */
+setup('capture Cloudflare Access state only', async ({ page }) => {
+  mkdirSync(dirname(CLOUDFLARE_STATE_PATH), { recursive: true });
 
-  await page.goto(authUrl);
+  await page.goto(config.web.baseURL, { waitUntil: 'domcontentloaded' });
 
-  await page.getByLabel(/mobile|phone|شماره/i).first().fill(config.auth.mobile);
-  await page
-    .getByRole('button', { name: /submit|continue|send|next|ادامه|ارسال|بعدی/i })
-    .first()
-    .click();
+  // If an identity provider is presented, a human would have to sign in.
+  await page.waitForURL(
+    (url) => !/cloudflareaccess\.com|microsoftonline\.com/i.test(url.hostname),
+    { timeout: 60_000 },
+  );
 
-  await page.waitForURL(loginUrl, { timeout: 30_000 });
+  const state = await page.context().storageState();
+  const cookies = state.cookies.filter(
+    (cookie) =>
+      CLOUDFLARE_COOKIE.test(cookie.name) || CLOUDFLARE_DOMAIN.test(cookie.domain),
+  );
 
-  await page.getByLabel(/otp|code|کد/i).first().fill(config.auth.otp);
-  await page
-    .getByRole('button', { name: /login|submit|confirm|ورود|تأیید|تایید|ارسال/i })
-    .first()
-    .click();
-
-  await page.waitForURL((url) => !url.toString().includes('/auth'), { timeout: 30_000 });
-
-  await page.context().storageState({ path: STORAGE_STATE_PATH });
-  expect(await page.title()).toBeTruthy();
+  writeFileSync(
+    CLOUDFLARE_STATE_PATH,
+    JSON.stringify({ cookies, origins: [] }, null, 2),
+  );
 });

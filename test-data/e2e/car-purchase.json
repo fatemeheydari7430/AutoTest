@@ -1,0 +1,23 @@
+{
+  "vehicle": {
+    "brand": "Toyota",
+    "model": "COROLLA",
+    "year": "2024",
+    "trim": "GLI-1.6 L-121 HP"
+  },
+  "specification": "GCC Spec",
+  "registrationEmirate": "Dubai",
+  "driver": {
+    "nationality": "India",
+    "dateOfBirth": {
+      "year": "1995",
+      "month": "June",
+      "day": "15"
+    }
+  },
+  "drivingLicenseYears": "More than 5 years",
+  "claimsHistory": "Claim-free for over 4 years",
+  "contact": {
+    "email": "qa.testing@example.com"
+  }
+}

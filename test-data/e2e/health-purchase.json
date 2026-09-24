@@ -1,0 +1,13 @@
+{
+  "insureFor": "Me or my family",
+  "gender": "Male",
+  "emirate": "Dubai",
+  "salary": "More than AED 4,000",
+  "members": ["Me"],
+  "dateOfBirth": {
+    "year": "1995",
+    "month": "June",
+    "day": "15"
+  },
+  "medicalCondition": "No"
+}
