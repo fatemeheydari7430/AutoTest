@@ -30,6 +30,7 @@
       <span class="runbar-label">Execution Mode</span>
       <label class="radio"><input type="radio" name="execution-mode" value="headless" checked /> Headless</label>
       <label class="radio"><input type="radio" name="execution-mode" value="headed" /> Open browser during test</label>
+      <button id="stop-test" class="danger" disabled>Stop Test</button>
     </div>
 
     <section id="console-section" class="console-section" hidden>
@@ -85,7 +86,6 @@
             <select id="car-emirate"></select>
           </div>
         </div>
-        <span id="car-lookup-status" class="source"></span>
 
         <h2>Driver</h2>
         <div class="grid">
@@ -124,6 +124,7 @@
           <button id="car-save" class="primary">Save Configuration</button>
           <button id="car-reset">Reset Default</button>
           <button id="car-run">Run Car Test</button>
+          <button id="car-json">View / Edit JSON</button>
           <span id="car-source" class="source"></span>
         </div>
 
@@ -182,6 +183,7 @@
           <button id="health-save" class="primary">Save Configuration</button>
           <button id="health-reset">Reset Default</button>
           <button id="health-run">Run Health Test</button>
+          <button id="health-json">View / Edit JSON</button>
           <span id="health-source" class="source"></span>
         </div>
 
@@ -189,6 +191,48 @@
         <div id="health-last-result" class="result">No run yet.</div>
       </section>
     </main>
+
+    <div id="json-modal" class="modal" hidden>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="json-modal-title">Configuration JSON</h2>
+          <button id="json-close">Close</button>
+        </div>
+
+        <h3>Configuration</h3>
+        <textarea id="config-json" class="json-area" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="json-format">Format JSON</button>
+          <button id="json-validate">Validate JSON</button>
+          <button id="json-apply" class="primary">Apply to Form</button>
+        </div>
+        <div id="json-errors" class="message error" hidden></div>
+
+        <h3>Batch Scenarios</h3>
+        <textarea id="batch-json" class="json-area" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="batch-add-current">Add Current Configuration as Scenario</button>
+          <button id="batch-format">Format JSON</button>
+          <button id="batch-validate">Validate Batch</button>
+          <button id="batch-run" class="primary">Run All Scenarios</button>
+        </div>
+        <div id="batch-errors" class="message error" hidden></div>
+
+        <h3>Batch Progress</h3>
+        <div id="batch-progress" class="summary">No batch has been run.</div>
+        <table id="batch-table" class="batch-table" hidden>
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>Status</th>
+              <th>Duration</th>
+              <th>Tracking Code</th>
+            </tr>
+          </thead>
+          <tbody id="batch-table-body"></tbody>
+        </table>
+      </div>
+    </div>
 
     <script src="/app.js"></script>
   </body>

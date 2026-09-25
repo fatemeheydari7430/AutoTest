@@ -85,7 +85,7 @@ export interface DateParts {
 
 export interface CarConfig {
   leadType: string;
-  vehicle: { brand: string; model: string; year: string; trim: string };
+  vehicle: { brand: string; model: string; year: string; trim: string | null };
   specification: string;
   emirate: string;
   driver: { nationality: string; dateOfBirth: DateParts };
@@ -95,8 +95,13 @@ export interface CarConfig {
 
 export interface HealthMemberConfig {
   type: string;
-  dateOfBirth: DateParts;
+  count: number;
+  dateOfBirths: DateParts[];
 }
+
+/** Only Son/Daughter support a count > 1 in the real flow (UI counter, max 10). */
+export const COUNTABLE_HEALTH_MEMBERS = ['SON', 'DAUGHTER'];
+export const MAX_HEALTH_MEMBER_COUNT = 10;
 
 export interface HealthConfig {
   insureFor: string;
@@ -204,7 +209,22 @@ function validateEnum(
 function validateHealthMember(value: unknown, prefix: string): string[] {
   if (!isRecord(value)) return [`${prefix} must be an object`];
   const errors = validateEnum(value.type, HEALTH_MEMBERS, `${prefix}.type`);
-  errors.push(...validateDateParts(value.dateOfBirth, `${prefix}.dateOfBirth`));
+  const countable = typeof value.type === 'string' && COUNTABLE_HEALTH_MEMBERS.includes(value.type);
+  const max = countable ? MAX_HEALTH_MEMBER_COUNT : 1;
+  const count = value.count;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > max) {
+    errors.push(`${prefix}.count must be an integer between 1 and ${max}`);
+  }
+  if (!Array.isArray(value.dateOfBirths)) {
+    errors.push(`${prefix}.dateOfBirths must be an array`);
+  } else {
+    if (typeof count === 'number' && value.dateOfBirths.length !== count) {
+      errors.push(`${prefix}.dateOfBirths must contain exactly ${count} entries`);
+    }
+    value.dateOfBirths.forEach((dob, index) => {
+      errors.push(...validateDateParts(dob, `${prefix}.dateOfBirths[${index}]`));
+    });
+  }
   return errors;
 }
 
@@ -228,7 +248,10 @@ export function validateCarConfig(input: unknown): string[] {
     errors.push(...validateText(vehicle.brand, 'vehicle.brand'));
     errors.push(...validateText(vehicle.model, 'vehicle.model'));
     errors.push(...validateText(vehicle.year, 'vehicle.year'));
-    errors.push(...validateText(vehicle.trim, 'vehicle.trim'));
+    // Trim is optional: some vehicle/model/year combinations have no trim step.
+    if (vehicle.trim !== undefined && vehicle.trim !== null) {
+      errors.push(...validateText(vehicle.trim, 'vehicle.trim'));
+    }
   }
 
   errors.push(...validateEnum(input.specification, CAR_SPECIFICATIONS, 'specification'));

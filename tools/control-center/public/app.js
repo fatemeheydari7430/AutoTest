@@ -50,43 +50,6 @@ function fillDatalist(id, values) {
   }
 }
 
-const carLookup = {
-  countriesLoaded: false,
-};
-
-function setLookupStatus(text) {
-  $("car-lookup-status").textContent = text ?? "";
-}
-
-async function getJson(url) {
-  const response = await fetch(url);
-  const data = await response.json();
-  if (!response.ok || data.ok === false) {
-    throw new Error((data.errors && data.errors[0]) || `Request failed (${response.status})`);
-  }
-  return data;
-}
-
-async function loadCarCountries() {
-  if (carLookup.countriesLoaded) return;
-  setLookupStatus("Loading nationalities…");
-  try {
-    const data = await getJson("/api/lookups/car/countries");
-    const values = data.items.map((item) => item.value);
-    if (values.length === 0) {
-      // Keep the preset-seeded values so the saved selection is never lost.
-      setLookupStatus("Country lookup returned no names; keeping preset values.");
-      carLookup.countriesLoaded = true;
-      return;
-    }
-    fillDatalist("car-nationalities", values);
-    carLookup.countriesLoaded = true;
-    setLookupStatus("");
-  } catch (error) {
-    setLookupStatus(`Could not load nationalities from API: ${error.message}`);
-  }
-}
-
 function gather(presets, pick) {
   const values = new Set();
   for (const preset of Object.values(presets)) {
@@ -141,23 +104,57 @@ function getDob(prefix) {
 }
 
 const memberDobCache = {};
+const memberCounts = {};
 const DEFAULT_MEMBER_DOB = { day: "15", month: "June", year: "1995" };
+// Must match COUNTABLE_HEALTH_MEMBERS / MAX_HEALTH_MEMBER_COUNT on the server.
+const COUNTABLE_MEMBERS = ["SON", "DAUGHTER"];
+const MAX_MEMBER_COUNT = 10;
 
-function renderMembers(map, selected) {
+function isCountable(type) {
+  return COUNTABLE_MEMBERS.includes(type);
+}
+
+function memberCountId(type) {
+  return `member-${type}-count`;
+}
+
+function renderMembers(map, selected, counts = {}) {
   const container = $("health-members");
   container.innerHTML = "";
   for (const [key, label] of Object.entries(map)) {
     const wrapper = document.createElement("label");
+    wrapper.className = "member-item";
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = key;
     checkbox.checked = selected.includes(key);
+    wrapper.appendChild(checkbox);
+    wrapper.appendChild(document.createTextNode(label));
+
+    if (isCountable(key)) {
+      const countInput = document.createElement("input");
+      countInput.type = "number";
+      countInput.min = "1";
+      countInput.max = String(MAX_MEMBER_COUNT);
+      countInput.className = "member-count";
+      countInput.id = memberCountId(key);
+      countInput.value = String(counts[key] ?? memberCounts[key] ?? 1);
+      countInput.disabled = !checkbox.checked;
+      countInput.addEventListener("input", () => {
+        captureMemberDobs();
+        renderMemberDobs();
+      });
+      wrapper.appendChild(countInput);
+      memberCounts[key] = Number(counts[key] ?? 1);
+    }
+
     checkbox.addEventListener("change", () => {
+      const countInput = $(memberCountId(key));
+      if (countInput) countInput.disabled = !checkbox.checked;
       captureMemberDobs();
       renderMemberDobs();
     });
-    wrapper.appendChild(checkbox);
-    wrapper.appendChild(document.createTextNode(label));
+
     container.appendChild(wrapper);
   }
 }
@@ -166,8 +163,17 @@ function getMembers() {
   return [...document.querySelectorAll("#health-members input:checked")].map((el) => el.value);
 }
 
-function memberDobId(type, part) {
-  return `member-${type}-dob-${part}`;
+function getMemberCount(type) {
+  if (!isCountable(type)) return 1;
+  const input = $(memberCountId(type));
+  if (!input) return 1;
+  const value = Number.parseInt(input.value, 10);
+  if (!Number.isInteger(value) || value < 1) return 1;
+  return Math.min(value, MAX_MEMBER_COUNT);
+}
+
+function memberDobId(type, index, part) {
+  return `member-${type}-${index}-dob-${part}`;
 }
 
 function buildSelect(id, values, selected) {
@@ -197,12 +203,17 @@ function yearValues() {
 
 function captureMemberDobs() {
   for (const type of Object.keys(options.health.members)) {
-    const day = $(memberDobId(type, "day"));
-    const month = $(memberDobId(type, "month"));
-    const year = $(memberDobId(type, "year"));
-    if (day && month && year) {
-      memberDobCache[type] = { day: day.value, month: month.value, year: year.value };
+    const count = getMemberCount(type);
+    const list = [];
+    for (let index = 0; index < count; index += 1) {
+      const day = $(memberDobId(type, index, "day"));
+      const month = $(memberDobId(type, index, "month"));
+      const year = $(memberDobId(type, index, "year"));
+      if (day && month && year) {
+        list.push({ year: year.value, month: month.value, day: day.value });
+      }
     }
+    if (list.length > 0) memberDobCache[type] = list;
   }
 }
 
@@ -212,31 +223,44 @@ function renderMemberDobs() {
   const months = options.health.months;
   for (const [type, label] of Object.entries(options.health.members)) {
     if (!getMembers().includes(type)) continue;
-    const saved = memberDobCache[type] ?? DEFAULT_MEMBER_DOB;
-    memberDobCache[type] = { ...saved };
+    const count = getMemberCount(type);
+    const savedList = memberDobCache[type] ?? [];
+    const list = [];
+    for (let index = 0; index < count; index += 1) {
+      const saved = savedList[index] ?? DEFAULT_MEMBER_DOB;
+      list.push({ ...saved });
 
-    const field = document.createElement("div");
-    field.className = "field dob";
-    const title = document.createElement("label");
-    title.textContent = `${label} Date of Birth`;
-    field.appendChild(title);
+      const field = document.createElement("div");
+      field.className = "field dob";
+      const title = document.createElement("label");
+      title.textContent =
+        count > 1 ? `${label} ${index + 1} Date of Birth` : `${label} Date of Birth`;
+      field.appendChild(title);
 
-    const row = document.createElement("div");
-    row.className = "dob-row";
-    row.appendChild(buildSelect(memberDobId(type, "day"), dayValues(), saved.day));
-    row.appendChild(buildSelect(memberDobId(type, "month"), months, saved.month));
-    row.appendChild(buildSelect(memberDobId(type, "year"), yearValues(), saved.year));
-    field.appendChild(row);
-    container.appendChild(field);
+      const row = document.createElement("div");
+      row.className = "dob-row";
+      row.appendChild(buildSelect(memberDobId(type, index, "day"), dayValues(), saved.day));
+      row.appendChild(buildSelect(memberDobId(type, index, "month"), months, saved.month));
+      row.appendChild(buildSelect(memberDobId(type, index, "year"), yearValues(), saved.year));
+      field.appendChild(row);
+      container.appendChild(field);
+    }
+    memberDobCache[type] = list;
   }
 }
 
 function getMemberConfigs() {
   captureMemberDobs();
-  return getMembers().map((type) => ({
-    type,
-    dateOfBirth: memberDobCache[type] ?? { ...DEFAULT_MEMBER_DOB },
-  }));
+  return getMembers().map((type) => {
+    const count = getMemberCount(type);
+    const dates = (memberDobCache[type] ?? []).slice(0, count).map((dob) => ({ ...dob }));
+    while (dates.length < count) dates.push({ ...DEFAULT_MEMBER_DOB });
+    return { type, count, dateOfBirths: dates };
+  });
+}
+
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function populateOptions() {
@@ -288,7 +312,7 @@ function applyCarConfig(config) {
   $("car-brand").value = config.vehicle.brand;
   $("car-model").value = config.vehicle.model;
   $("car-year").value = config.vehicle.year;
-  $("car-trim").value = config.vehicle.trim;
+  $("car-trim").value = config.vehicle.trim ?? "";
   $("car-specification").value = config.specification;
   $("car-emirate").value = config.emirate;
   $("car-nationality").value = config.driver.nationality;
@@ -306,7 +330,8 @@ function collectCarConfig() {
       brand: $("car-brand").value,
       model: $("car-model").value,
       year: $("car-year").value,
-      trim: $("car-trim").value,
+      // Trim is optional (some vehicles have no trim step).
+      trim: $("car-trim").value.trim() || null,
     },
     specification: $("car-specification").value,
     emirate: $("car-emirate").value,
@@ -333,10 +358,16 @@ function applyHealthConfig(config) {
   $("health-medical").value = String(config.medicalCondition);
 
   for (const key of Object.keys(memberDobCache)) delete memberDobCache[key];
+  for (const key of Object.keys(memberCounts)) delete memberCounts[key];
   for (const member of config.members) {
-    memberDobCache[member.type] = { ...member.dateOfBirth };
+    memberCounts[member.type] = member.count ?? 1;
+    memberDobCache[member.type] = (member.dateOfBirths ?? []).map((dob) => ({ ...dob }));
   }
-  renderMembers(options.health.members, config.members.map((member) => member.type));
+  renderMembers(
+    options.health.members,
+    config.members.map((member) => member.type),
+    memberCounts,
+  );
   renderMemberDobs();
   updateHealthSummary();
 }
@@ -499,8 +530,13 @@ function renderConsole(state) {
 
   section.hidden = false;
   const name = product === "car" ? "Car" : product === "health" ? "Health" : "";
-  title.textContent =
-    state.running && product ? `Running ${name} test...` : name ? `${name} test output` : "Live Console";
+  if (state.running && state.currentScenario) {
+    title.textContent = `Running scenario ${state.currentScenario.index} of ${state.currentScenario.total}: ${state.currentScenario.name}`;
+  } else if (state.running && product) {
+    title.textContent = `Running ${name} test...`;
+  } else {
+    title.textContent = name ? `${name} test output` : "Live Console";
+  }
 
   const stick = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
   pre.textContent = lines.join("\n");
@@ -530,13 +566,50 @@ function resultRow(label, value) {
   return row;
 }
 
+function statusLabel(status) {
+  const labels = { passed: "Passed", failed: "Failed", stopped: "Stopped", "not-run": "Not Run" };
+  return labels[status] ?? status;
+}
+
+function batchStatusLabel(status) {
+  const labels = { running: "Running", completed: "Completed", stopped: "Stopped", failed: "Failed" };
+  return labels[status] ?? status;
+}
+
+function trackingRow(value) {
+  const row = document.createElement("div");
+  row.className = "result-row";
+  const labelEl = document.createElement("span");
+  labelEl.className = "result-label";
+  labelEl.textContent = "Tracking Code";
+  const valueEl = document.createElement("span");
+  valueEl.className = "result-value";
+  valueEl.textContent = value || "—";
+  row.appendChild(labelEl);
+  row.appendChild(valueEl);
+  if (value) {
+    const copy = document.createElement("button");
+    copy.className = "copy";
+    copy.textContent = "Copy";
+    copy.addEventListener("click", () => {
+      navigator.clipboard?.writeText(value);
+      copy.textContent = "Copied";
+      setTimeout(() => {
+        copy.textContent = "Copy";
+      }, 1200);
+    });
+    row.appendChild(copy);
+  }
+  return row;
+}
+
 function renderResult(product, state) {
   const el = $(`${product}-last-result`);
   if (!el) return;
   el.innerHTML = "";
   el.className = "result";
 
-  if (state.running && state.product === product) {
+  if (state.running && state.product === product && state.mode === "single") {
     el.classList.add("running");
     el.appendChild(resultRow("Status", "Running..."));
     el.appendChild(resultRow("Duration", formatDuration(Date.now() - state.startedAt)));
@@ -550,9 +623,49 @@ function renderResult(product, state) {
   }
 
   el.classList.add(last.status);
-  el.appendChild(resultRow("Status", last.status === "passed" ? "Passed" : "Failed"));
+  el.appendChild(resultRow("Status", statusLabel(last.status)));
   el.appendChild(resultRow("Duration", formatDuration(last.duration)));
+  el.appendChild(trackingRow(last.trackingCode));
   if (last.error) el.appendChild(resultRow("Error", last.error));
+}
+
+function renderBatch(state) {
+  const progress = $("batch-progress");
+  const table = $("batch-table");
+  const body = $("batch-table-body");
+  if (!progress || !table || !body) return;
+
+  const batch = state.batch;
+  if (!batch) {
+    progress.textContent = "No batch has been run.";
+    table.hidden = true;
+    body.innerHTML = "";
+    return;
+  }
+
+  progress.textContent =
+    batch.status === "running" && state.currentScenario
+      ? `Running scenario ${state.currentScenario.index} of ${state.currentScenario.total}: ${state.currentScenario.name}`
+      : `Batch ${batchStatusLabel(batch.status)} — ${batch.results.length} scenario(s)`;
+
+  table.hidden = false;
+  body.innerHTML = "";
+  for (const result of batch.results) {
+    const tr = document.createElement("tr");
+    tr.className = result.status;
+    const cells = [
+      result.name,
+      statusLabel(result.status),
+      result.duration != null ? formatDuration(result.duration) : "—",
+      result.trackingCode || "—",
+    ];
+    for (const cell of cells) {
+      const td = document.createElement("td");
+      td.textContent = cell;
+      tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
 }
 
 const RUN_CONTROL_IDS = [
@@ -582,17 +695,191 @@ async function refreshRunStatus() {
     renderResult("car", data);
     renderResult("health", data);
     renderConsole(data);
-    if (!data.running) {
-      setRunButtonsDisabled(false);
-      if (runPoll) {
-        clearInterval(runPoll);
-        runPoll = null;
-      }
+    renderBatch(data);
+    setRunButtonsDisabled(data.running);
+    $("stop-test").disabled = !data.running;
+    if (!data.running && runPoll) {
+      clearInterval(runPoll);
+      runPoll = null;
     }
     return data;
   } catch {
     return null;
   }
+}
+
+async function stopCurrentRun() {
+  const { ok, data } = await request("/api/run/stop", "POST");
+  if (!ok) {
+    showMessage("error", [data.errors?.[0] ?? "Could not stop test"]);
+    return;
+  }
+  showMessage("ok", ["Stop requested."]);
+  await refreshRunStatus();
+}
+
+// ---- JSON editor + batch scenarios ----
+
+let jsonModalProduct = null;
+
+function currentConfig(product) {
+  return product === "car" ? collectCarConfig() : collectHealthConfig();
+}
+
+function applyConfigToForm(product, config) {
+  if (product === "car") applyCarConfig(config);
+  else applyHealthConfig(config);
+}
+
+function pretty(value) {
+  return JSON.stringify(value, null, 2);
+}
+
+function showJsonErrors(containerId, lines) {
+  const box = $(containerId);
+  if (!lines || lines.length === 0) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = "";
+  box.textContent = lines[0];
+  if (lines.length > 1) {
+    const ul = document.createElement("ul");
+    for (const line of lines.slice(1)) {
+      const li = document.createElement("li");
+      li.textContent = line;
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+}
+
+function openJsonModal(product) {
+  jsonModalProduct = product;
+  $("json-modal-title").textContent = `${product === "car" ? "Car" : "Health"} Configuration JSON`;
+  $("config-json").value = pretty(currentConfig(product));
+  if (!$("batch-json").value.trim()) {
+    $("batch-json").value = pretty({ product, scenarios: [] });
+  }
+  showJsonErrors("json-errors", []);
+  showJsonErrors("batch-errors", []);
+  $("json-modal").hidden = false;
+  refreshRunStatus();
+}
+
+function closeJsonModal() {
+  $("json-modal").hidden = true;
+  jsonModalProduct = null;
+}
+
+function formatJson(id, errorsId) {
+  try {
+    $(id).value = pretty(JSON.parse($(id).value));
+    showJsonErrors(errorsId, []);
+  } catch (error) {
+    showJsonErrors(errorsId, [`Invalid JSON: ${error.message}`]);
+  }
+}
+
+async function validateConfigJson() {
+  if (!jsonModalProduct) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse($("config-json").value);
+  } catch (error) {
+    showJsonErrors("json-errors", [`Invalid JSON: ${error.message}`]);
+    return null;
+  }
+  const { ok, data } = await request(`/api/config/${jsonModalProduct}/validate`, "POST", parsed);
+  if (!ok) {
+    showJsonErrors("json-errors", ["Validation failed", ...(data.errors ?? [])]);
+    return null;
+  }
+  showJsonErrors("json-errors", []);
+  return parsed;
+}
+
+async function applyConfigJson() {
+  const parsed = await validateConfigJson();
+  if (!parsed) return;
+  applyConfigToForm(jsonModalProduct, parsed);
+  closeJsonModal();
+  showMessage("ok", ["JSON applied to the form. Click Save Configuration to persist."]);
+}
+
+function addCurrentAsScenario() {
+  if (!jsonModalProduct) return;
+  let batch;
+  try {
+    batch = JSON.parse($("batch-json").value);
+  } catch (error) {
+    showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
+    return;
+  }
+  if (batch.product && batch.product !== jsonModalProduct) {
+    showJsonErrors("batch-errors", [`Batch product must be "${jsonModalProduct}"`]);
+    return;
+  }
+  batch.product = jsonModalProduct;
+  if (!Array.isArray(batch.scenarios)) batch.scenarios = [];
+  // Clone the CURRENT form state (even if unsaved) as an independent deep copy,
+  // so later edits to the scenario or the form cannot mutate each other.
+  batch.scenarios.push({
+    name: `Scenario ${batch.scenarios.length + 1}`,
+    config: deepClone(currentConfig(jsonModalProduct)),
+  });
+  $("batch-json").value = pretty(batch);
+  showJsonErrors("batch-errors", []);
+}
+
+async function validateBatchJson() {
+  if (!jsonModalProduct) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse($("batch-json").value);
+  } catch (error) {
+    showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
+    return null;
+  }
+  if (parsed.product && parsed.product !== jsonModalProduct) {
+    showJsonErrors("batch-errors", [`Batch product must be "${jsonModalProduct}"`]);
+    return null;
+  }
+  const { ok, data } = await request("/api/batch/validate", "POST", {
+    product: jsonModalProduct,
+    scenarios: parsed.scenarios,
+  });
+  if (!ok) {
+    showJsonErrors("batch-errors", ["Batch validation failed", ...(data.errors ?? [])]);
+    return null;
+  }
+  showJsonErrors("batch-errors", []);
+  return parsed;
+}
+
+async function runBatchJson() {
+  const parsed = await validateBatchJson();
+  if (!parsed) return;
+
+  const testOptions = await saveTestOptions();
+  if (!testOptions.ok) {
+    showJsonErrors("batch-errors", ["Could not save execution mode", ...(testOptions.data.errors ?? [])]);
+    return;
+  }
+
+  const { ok, data } = await request("/api/batch/run", "POST", {
+    product: jsonModalProduct,
+    scenarios: parsed.scenarios,
+  });
+  if (!ok) {
+    showJsonErrors("batch-errors", ["Could not start batch", ...(data.errors ?? [])]);
+    return;
+  }
+  setRunButtonsDisabled(true);
+  if (!runPoll) runPoll = setInterval(refreshRunStatus, 1000);
+  await refreshRunStatus();
 }
 
 async function startRun(product) {
@@ -637,9 +924,6 @@ function wireEvents() {
     applyHealthConfig(healthPresets[event.target.value]);
   });
 
-  $("car-nationality").addEventListener("focus", loadCarCountries);
-  $("car-nationality").addEventListener("input", loadCarCountries);
-
   $("panel-car").addEventListener("input", updateCarSummary);
   $("panel-car").addEventListener("change", updateCarSummary);
   $("panel-health").addEventListener("input", updateHealthSummary);
@@ -654,6 +938,18 @@ function wireEvents() {
   $("health-run").addEventListener("click", () => startRun("health"));
   $("run-car-top").addEventListener("click", () => startRun("car"));
   $("run-health-top").addEventListener("click", () => startRun("health"));
+  $("stop-test").addEventListener("click", stopCurrentRun);
+
+  $("car-json").addEventListener("click", () => openJsonModal("car"));
+  $("health-json").addEventListener("click", () => openJsonModal("health"));
+  $("json-close").addEventListener("click", closeJsonModal);
+  $("json-format").addEventListener("click", () => formatJson("config-json", "json-errors"));
+  $("json-validate").addEventListener("click", validateConfigJson);
+  $("json-apply").addEventListener("click", applyConfigJson);
+  $("batch-format").addEventListener("click", () => formatJson("batch-json", "batch-errors"));
+  $("batch-add-current").addEventListener("click", addCurrentAsScenario);
+  $("batch-validate").addEventListener("click", validateBatchJson);
+  $("batch-run").addEventListener("click", runBatchJson);
 }
 
 async function init() {

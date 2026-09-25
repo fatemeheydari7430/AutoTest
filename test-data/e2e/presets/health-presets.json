@@ -7,11 +7,14 @@
     "members": [
       {
         "type": "YOURSELF",
-        "dateOfBirth": {
-          "year": "1995",
-          "month": "June",
-          "day": "15"
-        }
+        "count": 1,
+        "dateOfBirths": [
+          {
+            "year": "1995",
+            "month": "June",
+            "day": "15"
+          }
+        ]
       }
     ],
     "isAnyMemberPregnant": false,
@@ -25,11 +28,14 @@
     "members": [
       {
         "type": "YOURSELF",
-        "dateOfBirth": {
-          "year": "1995",
-          "month": "June",
-          "day": "15"
-        }
+        "count": 1,
+        "dateOfBirths": [
+          {
+            "year": "1995",
+            "month": "June",
+            "day": "15"
+          }
+        ]
       }
     ],
     "isAnyMemberPregnant": false,

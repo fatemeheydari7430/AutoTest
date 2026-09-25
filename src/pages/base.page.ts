@@ -1,5 +1,9 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export class BasePage {
   constructor(protected readonly page: Page) {}
 
@@ -55,6 +59,10 @@ export class BasePage {
   /**
    * Opens a labelled select field, optionally searches, then picks an option.
    * Handles both dialog-based modals and inline searchable lists.
+   *
+   * Matching order: exact, then case-insensitive exact. If a case-insensitive
+   * match is ambiguous (more than one), it fails instead of guessing. No fuzzy
+   * / partial / "closest" matching.
    */
   protected async selectOption(label: string, value: string): Promise<void> {
     await this.field(label).click();
@@ -70,19 +78,52 @@ export class BasePage {
       await this.page.waitForTimeout(600);
     }
 
-    const option = scope
-      .getByRole('button', { name: value, exact: true })
-      .filter({ visible: true })
-      .first();
-    if (await option.count()) {
-      await option.click();
-    } else {
-      await scope.getByText(value, { exact: true }).filter({ visible: true }).first().click();
-    }
+    await this.pickOption(scope, value);
 
     if (dialogVisible) {
       await expect(dialog).toBeHidden();
     }
+  }
+
+  private async pickOption(scope: Page | Locator, value: string): Promise<void> {
+    const exactButton = scope.getByRole('button', { name: value, exact: true }).filter({ visible: true });
+    const exactText = scope.getByText(value, { exact: true }).filter({ visible: true });
+    const ci = new RegExp(`^${escapeRegExp(value)}$`, 'i');
+    const ciButtons = scope.getByRole('button', { name: ci }).filter({ visible: true });
+    const ciText = scope.getByText(ci).filter({ visible: true });
+
+    // Option lists load asynchronously after the search is typed, so poll
+    // instead of a single non-waiting count. Exact is always preferred.
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      if ((await exactButton.count()) > 0) {
+        await exactButton.first().click();
+        return;
+      }
+      if ((await exactText.count()) > 0) {
+        await exactText.first().click();
+        return;
+      }
+      const ciButtonCount = await ciButtons.count();
+      if (ciButtonCount === 1) {
+        await ciButtons.first().click();
+        return;
+      }
+      if (ciButtonCount > 1) {
+        throw new Error(`Ambiguous option "${value}": ${ciButtonCount} case-insensitive matches`);
+      }
+      const ciTextCount = await ciText.count();
+      if (ciTextCount === 1) {
+        await ciText.first().click();
+        return;
+      }
+      if (ciTextCount > 1) {
+        throw new Error(`Ambiguous option "${value}": ${ciTextCount} case-insensitive matches`);
+      }
+      await this.page.waitForTimeout(200);
+    }
+
+    throw new Error(`Option "${value}" not found`);
   }
 
   protected byRole(role: Parameters<Page['getByRole']>[0], name?: string | RegExp): Locator {

@@ -22,6 +22,10 @@ function uiLabel(map: Record<string, string>, value: string, context: string): s
   return label;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export class HealthQuestionnairePage extends BasePage {
   async answerGender(gender: string): Promise<void> {
     await this.expectStepText('Select your gender', 'Gender step did not load');
@@ -44,10 +48,8 @@ export class HealthQuestionnairePage extends BasePage {
 
   async selectMembers(members: HealthMemberConfig[]): Promise<void> {
     await this.expectStepText(/included in your coverage/i, 'Members step did not load');
-    for (const member of members) {
-      await this.page
-        .getByRole('button', { name: uiLabel(HEALTH_MEMBERS, member.type, 'member'), exact: true })
-        .click();
+    for (const member of this.canonicalOrder(members)) {
+      await this.selectMember(member);
     }
     await this.clickContinue();
   }
@@ -55,21 +57,25 @@ export class HealthQuestionnairePage extends BasePage {
   async enterDateOfBirth(members: HealthMemberConfig[]): Promise<void> {
     await this.expectStepText('Enter dates of birth', 'Date of birth step did not load');
 
-    // The backend returns one DOB control per member. Verify the UI matches the
-    // configured member count before filling, so a mismatch fails loudly.
+    // One DOB control per member instance. Verify the count before filling.
     const controls = this.page.getByLabel(/choose date/i);
     await expect(controls.first(), 'Date of birth control did not appear').toBeVisible();
+    const expected = members.reduce((total, member) => total + member.count, 0);
     expect(
       await controls.count(),
-      'Number of date-of-birth controls must match the configured members',
-    ).toBe(members.length);
+      'Number of date-of-birth controls must match the total member count',
+    ).toBe(expected);
 
-    // The API returns members in the canonical HEALTH_MEMBERS order, which is
-    // also the order of the DOB controls. Align the config to that order by
-    // member type (not a blind index) before filling.
-    const ordered = this.canonicalOrder(members);
-    for (let index = 0; index < ordered.length; index += 1) {
-      await this.pickDate(ordered[index].dateOfBirth, index);
+    // The API returns member instances in canonical HEALTH_MEMBERS order,
+    // repeating each type by its count (e.g. 1st son, 2nd son). Fill DOBs in
+    // that same type/sequence order; the app maps each control to the real
+    // member id when submitting.
+    let index = 0;
+    for (const member of this.canonicalOrder(members)) {
+      for (const dateOfBirth of member.dateOfBirths) {
+        await this.pickDate(dateOfBirth, index);
+        index += 1;
+      }
     }
 
     await this.clickContinue();
@@ -111,6 +117,24 @@ export class HealthQuestionnairePage extends BasePage {
     const finish = this.page.getByRole('button', { name: 'Finish', exact: true });
     await expect(finish).toBeEnabled();
     await finish.click();
+  }
+
+  /** Selects a member type and, for Son/Daughter, sets the requested count. */
+  private async selectMember(member: HealthMemberConfig): Promise<void> {
+    const label = uiLabel(HEALTH_MEMBERS, member.type, 'member');
+    const escaped = escapeRegExp(label);
+    await this.page.getByRole('button', { name: new RegExp(`^${escaped}$`) }).first().click();
+
+    if (member.count <= 1) return;
+
+    const row = this.page.getByRole('button', { name: new RegExp(`^${escaped}\\s+\\d+$`) }).first();
+    const increment = row.getByRole('button').nth(1);
+    for (let current = 1; current < member.count; current += 1) {
+      await increment.click();
+    }
+    await expect(row, `Expected "${label}" count to be ${member.count}`).toHaveAccessibleName(
+      new RegExp(`^${escaped}\\s+${member.count}$`),
+    );
   }
 
   private canonicalOrder(members: HealthMemberConfig[]): HealthMemberConfig[] {

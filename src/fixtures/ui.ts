@@ -32,6 +32,34 @@ export interface UiFixtures {
   healthPaymentPage: HealthPaymentPage;
 }
 
+/**
+ * Lead-creation endpoints and the product they belong to. Used to emit a single
+ * machine-readable Control Center event for the REAL tracking code of THIS run.
+ */
+const TRACKING_CODE_ENDPOINTS: Record<string, 'car' | 'health'> = {
+  '/motor/lead': 'car',
+  '/health/v1/lead': 'health',
+};
+
+const CONTROL_CENTER_EVENT = 'CONTROL_CENTER_EVENT ';
+
+/** Emits only the tracking code — never headers, tokens, cookies or request bodies. */
+function emitTrackingCode(product: 'car' | 'health', res: Response): void {
+  res
+    .json()
+    .then((body: unknown) => {
+      const value = (body as { response?: { tracking_code?: unknown } })?.response?.tracking_code;
+      if (typeof value === 'string' && value) {
+        console.log(
+          `${CONTROL_CENTER_EVENT}${JSON.stringify({ type: 'tracking-code', product, value })}`,
+        );
+      }
+    })
+    .catch(() => {
+      // ignore non-JSON / already-consumed responses
+    });
+}
+
 export const test = base.extend<UiFixtures>({
   _apiCallContext: [
     async ({ page }, use, testInfo) => {
@@ -46,9 +74,13 @@ export const test = base.extend<UiFixtures>({
         } catch {
           // keep raw url if parsing fails
         }
+        const method = res.request().method();
         // Only method + path + status are captured: no headers, cookies, tokens or bodies.
-        calls.push({ method: res.request().method(), path, status: res.status() });
+        calls.push({ method, path, status: res.status() });
         if (calls.length > 20) calls.shift();
+
+        const product = method === 'POST' ? TRACKING_CODE_ENDPOINTS[path] : undefined;
+        if (product) emitTrackingCode(product, res);
       };
 
       page.on('response', onResponse);

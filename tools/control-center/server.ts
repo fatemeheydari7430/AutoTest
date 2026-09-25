@@ -34,38 +34,20 @@ import {
 } from './playwright-launcher.ts';
 import {
   loadTestOptions,
+  recoverBatchBackup,
   runState,
   runTest,
   saveTestOptions,
+  startBatch,
+  stopActive,
+  validateScenarios,
   type RunProduct,
+  type ScenarioDefinition,
   type TestOptions,
 } from './test-runner.ts';
-import { config } from '../../src/config/index.ts';
 
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const CC_PORT = Number(process.env.CC_PORT ?? 4600);
-
-const MOTOR_BASE = config.carInsurance.basePath;
-
-/**
- * Secure reference-lookup proxy. The browser never receives an Authorization
- * header, cookie or any raw API response: only canonical value + display label.
- *
- * Only the public country reference endpoint is proxied. Motor
- * makes/models/trims are lead-scoped (observed: 410 without a real
- * tracking_code; trims additionally needs a state-mutating PUT /year) and are
- * therefore NOT fetched here, to avoid creating lead state just to populate a
- * dropdown.
- */
-async function apiJson(path: string, init: RequestInit = {}): Promise<unknown> {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    ...((init.headers as Record<string, string> | undefined) ?? {}),
-  };
-  const res = await fetch(`${config.api.baseURL}${path}`, { ...init, headers });
-  if (!res.ok) throw new Error(`${init.method ?? 'GET'} ${path} failed (${res.status})`);
-  return res.json();
-}
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -150,21 +132,6 @@ async function handleApi(
     case 'GET /api/options':
       return sendJson(res, 200, optionsPayload());
 
-    case 'GET /api/lookups/car/countries': {
-      const search = url.searchParams.get('search') ?? '';
-      const body = (await apiJson(
-        `${MOTOR_BASE}/country?searchTerm=${encodeURIComponent(search)}&size=300`,
-      )) as { response: { content: { id: number; name: string }[] } };
-      const items = body.response.content
-        .filter((country) => Boolean(country.name))
-        .map((country) => ({
-          value: country.name,
-          label: country.name,
-          id: country.id,
-        }));
-      return sendJson(res, 200, { ok: true, items });
-    }
-
     case 'GET /api/config/car':
       return sendJson(res, 200, {
         config: loadCarConfig(),
@@ -203,6 +170,80 @@ async function handleApi(
       if (errors.length > 0) return sendJson(res, 400, { ok: false, errors });
       saveHealthConfig(body as HealthConfig);
       return sendJson(res, 200, { ok: true, config: body });
+    }
+
+    case 'POST /api/config/car/validate': {
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const errors = validateCarConfig(body);
+      return errors.length > 0
+        ? sendJson(res, 400, { ok: false, errors })
+        : sendJson(res, 200, { ok: true });
+    }
+
+    case 'POST /api/config/health/validate': {
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const errors = validateHealthConfig(body);
+      return errors.length > 0
+        ? sendJson(res, 400, { ok: false, errors })
+        : sendJson(res, 200, { ok: true });
+    }
+
+    case 'POST /api/batch/validate': {
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const product = (body as { product?: unknown } | undefined)?.product;
+      if (product !== 'car' && product !== 'health') {
+        return sendJson(res, 400, { ok: false, errors: ['product must be "car" or "health"'] });
+      }
+      const scenarios = (body as { scenarios?: unknown } | undefined)?.scenarios;
+      const errors = validateScenarios(product as RunProduct, scenarios);
+      return errors.length > 0
+        ? sendJson(res, 400, { ok: false, errors })
+        : sendJson(res, 200, { ok: true, count: Array.isArray(scenarios) ? scenarios.length : 0 });
+    }
+
+    case 'POST /api/batch/run': {
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const product = (body as { product?: unknown } | undefined)?.product;
+      if (product !== 'car' && product !== 'health') {
+        return sendJson(res, 400, { ok: false, errors: ['product must be "car" or "health"'] });
+      }
+      const scenarios = (body as { scenarios?: unknown } | undefined)?.scenarios;
+      const result = startBatch(product as RunProduct, (scenarios ?? []) as ScenarioDefinition[]);
+      if (!result.started) {
+        return sendJson(res, result.errors ? 400 : 409, {
+          ok: false,
+          errors: result.errors ?? [result.message ?? 'Could not start batch'],
+        });
+      }
+      return sendJson(res, 200, { ok: true, product });
+    }
+
+    case 'POST /api/run/stop': {
+      const result = stopActive();
+      if (!result.stopped) {
+        return sendJson(res, 409, { ok: false, errors: [result.message ?? 'No test is running'] });
+      }
+      return sendJson(res, 200, { ok: true });
     }
 
     case 'POST /api/config/car/reset':
@@ -281,6 +322,8 @@ function handler(req: http.IncomingMessage, res: http.ServerResponse): void {
 }
 
 export function startServer(port: number = CC_PORT): Promise<http.Server> {
+  // Restore the runtime config if a previous batch was interrupted.
+  recoverBatchBackup();
   const server = http.createServer(handler);
   return new Promise((resolve, reject) => {
     server.once('error', reject);

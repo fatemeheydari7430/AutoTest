@@ -14,6 +14,15 @@ class LiveReporter implements Reporter {
     console.log(`Running ${suite.allTests().length} test(s)`);
   }
 
+  // Forward worker stdout/stderr (e.g. test console output) to the runner.
+  onStdOut(chunk: string | Buffer): void {
+    process.stdout.write(chunk.toString());
+  }
+
+  onStdErr(chunk: string | Buffer): void {
+    process.stderr.write(chunk.toString());
+  }
+
   onTestBegin(test: TestCase): void {
     console.log(`\n> ${test.title}`);
   }
