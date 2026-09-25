@@ -1,7 +1,7 @@
 import { test, expect, request } from '@playwright/test';
 import { config } from '@/config';
 
-test('service health is UP', async () => {
+test('service health is UP', { tag: ['@api'] }, async () => {
   test.skip(!config.health.endpoint, 'HEALTH_URL not configured');
 
   const ctx = await request.newContext();

@@ -7,10 +7,16 @@ import { BasePage } from './base.page';
  */
 export class PaymentPage extends BasePage {
   async expectLoaded(): Promise<void> {
-    await expect(this.page).toHaveURL(/\/car-insurance\/payment\//);
-    await expect(this.page.getByText('Billing & Payment Options').first()).toBeVisible({
+    await expect(this.page, 'Not on the car payment page').toHaveURL(/\/car-insurance\/payment\//);
+    await expect(
+      this.page.getByText('Billing & Payment Options').first(),
+      'Car payment page did not load ("Billing & Payment Options" not visible)',
+    ).toBeVisible({
       timeout: 45_000,
     });
-    await expect(this.page.getByRole('button', { name: 'Pay now' })).toBeVisible();
+    await expect(
+      this.page.getByRole('button', { name: 'Pay now' }),
+      'Car payment page "Pay now" button is not visible',
+    ).toBeVisible();
   }
 }

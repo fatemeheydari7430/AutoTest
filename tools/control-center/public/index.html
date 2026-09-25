@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lookinsure QA Control Center</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Lookinsure QA Control Center</h1>
+        <p class="subtitle">Configure an E2E run, then run it or open Playwright UI.</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="run-car-top">Run Car Test</button>
+        <button id="run-health-top">Run Health Test</button>
+        <button id="open-ui" class="primary">Open Playwright UI</button>
+      </div>
+    </header>
+
+    <div id="message" class="message" hidden></div>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="car">Car Insurance</button>
+      <button class="tab" data-tab="health">Health Insurance</button>
+    </nav>
+
+    <div class="runbar">
+      <span class="runbar-label">Execution Mode</span>
+      <label class="radio"><input type="radio" name="execution-mode" value="headless" checked /> Headless</label>
+      <label class="radio"><input type="radio" name="execution-mode" value="headed" /> Open browser during test</label>
+    </div>
+
+    <section id="console-section" class="console-section" hidden>
+      <h2 id="console-title">Live Console</h2>
+      <pre id="live-console" class="console"></pre>
+    </section>
+
+    <main>
+      <section id="panel-car" class="panel active">
+        <div class="row">
+          <label for="car-preset">Preset</label>
+          <select id="car-preset" class="preset"></select>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label for="car-lead-type">Lead Type (online flow)</label>
+            <select id="car-lead-type"></select>
+          </div>
+        </div>
+
+        <h2>Current Configuration</h2>
+        <div id="car-current-config" class="summary"></div>
+
+        <h2>Vehicle</h2>
+        <div class="grid">
+          <div class="field">
+            <label for="car-brand">Brand</label>
+            <input id="car-brand" list="car-brands" autocomplete="off" />
+            <datalist id="car-brands"></datalist>
+          </div>
+          <div class="field">
+            <label for="car-model">Model</label>
+            <input id="car-model" list="car-models" autocomplete="off" />
+            <datalist id="car-models"></datalist>
+          </div>
+          <div class="field">
+            <label for="car-year">Year</label>
+            <input id="car-year" list="car-years" autocomplete="off" />
+            <datalist id="car-years"></datalist>
+          </div>
+          <div class="field">
+            <label for="car-trim">Trim</label>
+            <input id="car-trim" list="car-trims" autocomplete="off" />
+            <datalist id="car-trims"></datalist>
+          </div>
+          <div class="field">
+            <label for="car-specification">Specification</label>
+            <select id="car-specification"></select>
+          </div>
+          <div class="field">
+            <label for="car-emirate">Emirate</label>
+            <select id="car-emirate"></select>
+          </div>
+        </div>
+        <span id="car-lookup-status" class="source"></span>
+
+        <h2>Driver</h2>
+        <div class="grid">
+          <div class="field">
+            <label for="car-nationality">Nationality</label>
+            <input id="car-nationality" list="car-nationalities" autocomplete="off" />
+            <datalist id="car-nationalities"></datalist>
+          </div>
+          <div class="field dob">
+            <label>Date of Birth</label>
+            <div class="dob-row">
+              <select id="car-dob-day"></select>
+              <select id="car-dob-month"></select>
+              <select id="car-dob-year"></select>
+            </div>
+          </div>
+        </div>
+
+        <h2>Driving history</h2>
+        <div class="grid">
+          <div class="field">
+            <label for="car-experience">Driving Experience</label>
+            <select id="car-experience"></select>
+          </div>
+          <div class="field">
+            <label for="car-claims">Claims</label>
+            <select id="car-claims"></select>
+          </div>
+          <div class="field">
+            <label for="car-email">Contact email</label>
+            <input id="car-email" type="email" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="car-save" class="primary">Save Configuration</button>
+          <button id="car-reset">Reset Default</button>
+          <button id="car-run">Run Car Test</button>
+          <span id="car-source" class="source"></span>
+        </div>
+
+        <h2>Last Result</h2>
+        <div id="car-last-result" class="result">No run yet.</div>
+      </section>
+
+      <section id="panel-health" class="panel">
+        <div class="row">
+          <label for="health-preset">Preset</label>
+          <select id="health-preset" class="preset"></select>
+        </div>
+
+        <h2>Current Configuration</h2>
+        <div id="health-current-config" class="summary"></div>
+
+        <h2>Questionnaire</h2>
+        <div class="grid">
+          <div class="field">
+            <label for="health-coverage">Insure for</label>
+            <select id="health-coverage"></select>
+          </div>
+          <div class="field">
+            <label for="health-gender">Gender</label>
+            <select id="health-gender"></select>
+          </div>
+          <div class="field">
+            <label for="health-emirate">Emirate</label>
+            <select id="health-emirate"></select>
+          </div>
+          <div class="field">
+            <label for="health-salary">Salary Range</label>
+            <select id="health-salary"></select>
+          </div>
+          <div class="field">
+            <label for="health-medical">Medical Condition</label>
+            <select id="health-medical">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="health-pregnant">Any Member Pregnant</label>
+            <select id="health-pregnant">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+        </div>
+
+        <h2>Members</h2>
+        <div id="health-members" class="members"></div>
+        <div id="health-member-dobs" class="member-dobs grid"></div>
+
+        <div class="actions">
+          <button id="health-save" class="primary">Save Configuration</button>
+          <button id="health-reset">Reset Default</button>
+          <button id="health-run">Run Health Test</button>
+          <span id="health-source" class="source"></span>
+        </div>
+
+        <h2>Last Result</h2>
+        <div id="health-last-result" class="result">No run yet.</div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

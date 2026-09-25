@@ -26,8 +26,10 @@ export class AppAuth {
 
     await this.page.goto(config.web.baseURL, { waitUntil: 'domcontentloaded' });
     await this.page.goto(this.loginUrl, { waitUntil: 'domcontentloaded' });
-    await this.page.waitForLoadState('networkidle').catch(() => {});
 
+    // Readiness is gated on the login form itself. Do NOT wait for
+    // `networkidle`: the app keeps background connections open, which made this
+    // wait cost ~25s per run. The phone field below is the real signal.
     const phone = this.page.getByRole('textbox', { name: /phone number/i });
     await phone.waitFor({ state: 'visible', timeout: 30_000 });
     await phone.click();
@@ -57,8 +59,9 @@ export class AppAuth {
     await this.page.waitForURL((url) => !url.toString().includes('/auth'), {
       timeout: 45_000,
     });
-    await expect(this.page.getByRole('link', { name: /my account/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(
+      this.page.getByRole('link', { name: /my account/i }),
+      'Login failed: the account menu is not visible, the app session may not be established',
+    ).toBeVisible({ timeout: 30_000 });
   }
 }

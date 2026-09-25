@@ -1,4 +1,5 @@
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type Response } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
 import { AppAuth } from '../auth/app-auth';
 import { CarInsurancePage } from '../pages/car-insurance.page';
 import { CarDetailsPage } from '../pages/car-details.page';
@@ -14,6 +15,8 @@ import { HealthQuotesPage } from '../pages/health-quotes.page';
 import { HealthPaymentPage } from '../pages/health-payment.page';
 
 export interface UiFixtures {
+  /** Auto fixture: on failure, attaches the last alpha-api calls (method/path/status only). */
+  _apiCallContext: void;
   appAuth: AppAuth;
   carInsurancePage: CarInsurancePage;
   carDetailsPage: CarDetailsPage;
@@ -30,6 +33,42 @@ export interface UiFixtures {
 }
 
 export const test = base.extend<UiFixtures>({
+  _apiCallContext: [
+    async ({ page }, use, testInfo) => {
+      const calls: { method: string; path: string; status: number }[] = [];
+
+      const onResponse = (res: Response): void => {
+        const url = res.url();
+        if (!/alpha-api\.lookinsure\.com/i.test(url)) return;
+        let path = url;
+        try {
+          path = new URL(url).pathname;
+        } catch {
+          // keep raw url if parsing fails
+        }
+        // Only method + path + status are captured: no headers, cookies, tokens or bodies.
+        calls.push({ method: res.request().method(), path, status: res.status() });
+        if (calls.length > 20) calls.shift();
+      };
+
+      page.on('response', onResponse);
+      await use();
+      page.off('response', onResponse);
+
+      const failed = testInfo.status !== testInfo.expectedStatus;
+      if (failed && calls.length > 0) {
+        // Only method + path + status are captured: no headers, cookies, tokens or bodies.
+        const file = testInfo.outputPath('last-api-calls.json');
+        writeFileSync(file, JSON.stringify(calls.slice(-8), null, 2));
+        await testInfo.attach('last-api-calls.json', {
+          path: file,
+          contentType: 'application/json',
+        });
+      }
+    },
+    { auto: true },
+  ],
+
   appAuth: async ({ page }, use) => {
     await use(new AppAuth(page));
   },

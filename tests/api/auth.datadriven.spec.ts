@@ -10,7 +10,7 @@ type LoginCase = { label: string; form: Record<string, string>; expectedStatus: 
 const sendCases = sendCasesData as SendCase[];
 const loginCases = loginCasesData as LoginCase[];
 
-test.describe('Auth / send-otp validation', () => {
+test.describe('Auth / send-otp validation', { tag: ['@api', '@regression', '@negative'] }, () => {
   for (const c of sendCases) {
     test(`send-otp: ${c.label}`, async () => {
       const ctx = await request.newContext({
@@ -29,7 +29,7 @@ test.describe('Auth / send-otp validation', () => {
   }
 });
 
-test.describe('Auth / login validation', () => {
+test.describe('Auth / login validation', { tag: ['@api', '@regression', '@negative'] }, () => {
   for (const c of loginCases) {
     test(`login: ${c.label}`, async () => {
       const ctx = await request.newContext({

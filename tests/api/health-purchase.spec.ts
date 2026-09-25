@@ -46,7 +46,7 @@ interface QuoteList {
 // so this flow must never run concurrently with another instance of itself.
 test.describe.configure({ mode: 'serial' });
 
-test.describe('Health insurance API / happy path', () => {
+test.describe('Health insurance API / happy path', { tag: ['@health', '@api', '@smoke', '@happy'] }, () => {
   test('completes health API flow up to ready for payment', async ({ authRequest }) => {
     let trackingCode = '';
     let memberId = 0;

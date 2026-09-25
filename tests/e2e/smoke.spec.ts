@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { HomePage } from '@/pages/home.page';
 
-test('authenticated user lands on home without redirect to login', async ({ page }) => {
+test('home loads without redirect to login', { tag: ['@e2e', '@smoke'] }, async ({ page }) => {
   const home = new HomePage(page);
   await home.goto('/');
 

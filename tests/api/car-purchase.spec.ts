@@ -43,7 +43,7 @@ interface QuoteList {
 // so this flow must never run concurrently with another instance of itself.
 test.describe.configure({ mode: 'serial' });
 
-test.describe('Car insurance API / happy path', () => {
+test.describe('Car insurance API / happy path', { tag: ['@car', '@api', '@smoke', '@happy'] }, () => {
   test('completes car API flow up to ready for review', async ({ authRequest }) => {
     let trackingCode = '';
     let makeId = 0;
@@ -76,7 +76,7 @@ test.describe('Car insurance API / happy path', () => {
       expectSuccess(await asJson<Envelope<unknown>>(res));
     });
 
-    await test.step('Resolve make', async () => {
+    await test.step('Select vehicle make', async () => {
       const res = await authRequest.get(
         `${base}/lead/manual/makes?searchTerm=${encodeURIComponent(happyPath.vehicle.make)}&size=200`,
         { headers: leadHeaders() },
@@ -91,7 +91,7 @@ test.describe('Car insurance API / happy path', () => {
       makeId = make.id;
     });
 
-    await test.step('Resolve model', async () => {
+    await test.step('Select vehicle model', async () => {
       const res = await authRequest.get(
         `${base}/lead/manual/models?make=${makeId}&size=500&page=1`,
         { headers: leadHeaders() },
@@ -114,7 +114,7 @@ test.describe('Car insurance API / happy path', () => {
       expectSuccess(await asJson<Envelope<unknown>>(res));
     });
 
-    await test.step('Resolve trim', async () => {
+    await test.step('Select vehicle trim', async () => {
       const res = await authRequest.get(
         `${base}/lead/manual/trims?make=${makeId}&model=${encodeURIComponent(model)}&year=${happyPath.vehicle.year}`,
         { headers: leadHeaders() },
@@ -157,7 +157,7 @@ test.describe('Car insurance API / happy path', () => {
       expectSuccess(await asJson<Envelope<unknown>>(res));
     });
 
-    await test.step('Resolve driver country', async () => {
+    await test.step('Select driver nationality', async () => {
       const res = await authRequest.get(
         `${base}/country?searchTerm=${encodeURIComponent(happyPath.driver.country)}&size=300`,
         { headers: leadHeaders() },
@@ -204,7 +204,7 @@ test.describe('Car insurance API / happy path', () => {
       expect(body.response.next_step).toBe('QUOTE_LIST');
     });
 
-    await test.step('Fetch lead (vehicle analysis)', async () => {
+    await test.step('Analyse vehicle', async () => {
       const res = await authRequest.get(`${base}/lead/fetch?`, { headers: leadHeaders() });
       expectStatus(res, 200);
       const body = await asJson<Envelope<{ analysis_status?: string }>>(res);
@@ -226,7 +226,7 @@ test.describe('Car insurance API / happy path', () => {
       insuranceType = quote.insurance_type;
     });
 
-    await test.step('Add quote (stop before order/payment)', async () => {
+    await test.step('Select insurance quote', async () => {
       const res = await authRequest.put(`${base}/lead/add-quote`, {
         headers: leadHeaders(),
         data: { insurance_type: insuranceType, quote_id: quoteId, add_on_ids: [] },
@@ -238,3 +238,4 @@ test.describe('Car insurance API / happy path', () => {
     });
   });
 });
+

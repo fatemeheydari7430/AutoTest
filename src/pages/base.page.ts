@@ -24,8 +24,11 @@ export class BasePage {
     await this.continueButton.click();
   }
 
-  protected async expectStepText(text: string | RegExp): Promise<void> {
-    await expect(this.page.getByText(text).first()).toBeVisible();
+  protected async expectStepText(text: string | RegExp, message?: string): Promise<void> {
+    await expect(
+      this.page.getByText(text).first(),
+      message ?? `Expected step to be visible: ${String(text)}`,
+    ).toBeVisible();
   }
 
   /** Opens a calendar picker and selects a year/month/day via the dialog. */

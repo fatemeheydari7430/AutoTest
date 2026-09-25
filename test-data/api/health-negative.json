@@ -1,0 +1,10 @@
+{
+  "invalidGender": "INVALID",
+  "invalidEmirate": "atlantis",
+  "invalidSalaryRange": "GALACTIC",
+  "invalidMemberPayload": [{ "type": "ALIEN", "count": 1, "gender": "MALE" }],
+  "invalidDateOfBirth": "2099-01-01",
+  "invalidSpecialCondition": { "is_any_member_pregnant": "not-a-boolean", "has_medical_condition": "not-a-boolean" },
+  "invalidQuote": { "copay_id": 999999999, "price": 1 },
+  "invalidTrackingCode": "invalid-tracking-code"
+}

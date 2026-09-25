@@ -4,7 +4,7 @@ import { config } from '@/config';
 import { getByPath } from '@/utils/json';
 import { login } from '@/api/auth';
 
-test.describe('Auth / OTP login flow', () => {
+test.describe('Auth / OTP login flow', { tag: ['@api', '@smoke'] }, () => {
   test('send-otp then login returns a Bearer JWT', async () => {
     const ctx = await request.newContext({
       baseURL: config.api.baseURL,

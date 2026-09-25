@@ -7,11 +7,20 @@ export class ReviewPayPage extends BasePage {
   }
 
   async expectLoaded(): Promise<void> {
-    await expect(this.page.getByText('Review and confirm policy').first()).toBeVisible({
+    await expect(
+      this.page.getByText('Review and confirm policy').first(),
+      'Car review page did not load',
+    ).toBeVisible({
       timeout: 45_000,
     });
-    await expect(this.confirmButton).toBeVisible({ timeout: 45_000 });
-    await expect(this.confirmButton).toBeEnabled();
+    await expect(
+      this.confirmButton,
+      'Review page "Confirm and pay" button is not visible',
+    ).toBeVisible({ timeout: 45_000 });
+    await expect(
+      this.confirmButton,
+      'Review page "Confirm and pay" button is not enabled',
+    ).toBeEnabled();
   }
 
   async setEmailIfPresent(email: string): Promise<void> {
@@ -23,6 +32,12 @@ export class ReviewPayPage extends BasePage {
 
   async confirmAndPay(): Promise<void> {
     await this.confirmButton.click();
-    await this.page.waitForURL(/\/car-insurance\/payment\//, { timeout: 60_000 });
+    try {
+      await this.page.waitForURL(/\/car-insurance\/payment\//, { timeout: 60_000 });
+    } catch {
+      throw new Error(
+        `Did not reach the car payment page after "Confirm and pay". Current URL: ${this.page.url()}`,
+      );
+    }
   }
 }

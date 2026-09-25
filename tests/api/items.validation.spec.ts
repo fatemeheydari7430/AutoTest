@@ -13,7 +13,7 @@ const cases = casesData as InvalidCase[];
 const resource = config.resource.basePath;
 const t = config.resource.enabled ? test : test.skip;
 
-test.describe('Items / validation', () => {
+test.describe('Items / validation', { tag: ['@api', '@negative'] }, () => {
   for (const c of cases) {
     t(`rejects ${c.label} with ${c.expectedStatus}`, async ({ authRequest }) => {
       const res = await authRequest.post(resource, { data: c.payload });

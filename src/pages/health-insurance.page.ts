@@ -1,15 +1,12 @@
 import { expect } from '@playwright/test';
 import { BasePage } from './base.page';
-
-/** UI label for each coverage type (business value -> visible button). */
-const COVERAGE_TYPES: Record<string, string> = {
-  INDIVIDUAL: 'Me or my family',
-};
+import { COVERAGE_TYPES } from '../config/test-options';
 
 export class HealthInsurancePage extends BasePage {
   async expectLoaded(): Promise<void> {
     await expect(
       this.page.getByRole('heading', { name: /Buy health insurance in the UAE/i }),
+      'Health insurance landing page did not load',
     ).toBeVisible();
   }
 
@@ -25,7 +22,16 @@ export class HealthInsurancePage extends BasePage {
     await this.page.getByRole('button', { name: buttonName }).click();
 
     // The wizard must start from its first step (proves a fresh lead).
-    await this.page.waitForURL(/\/health-insurance\/gender\//, { timeout: 30_000 });
-    await expect(this.page.getByText('Select your gender')).toBeVisible();
+    try {
+      await this.page.waitForURL(/\/health-insurance\/gender\//, { timeout: 30_000 });
+    } catch {
+      throw new Error(
+        `Health flow did not start at the gender step. Current URL: ${this.page.url()}`,
+      );
+    }
+    await expect(
+      this.page.getByText('Select your gender'),
+      'Expected a fresh health lead: the gender step should be the first step',
+    ).toBeVisible();
   }
 }

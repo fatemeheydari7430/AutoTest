@@ -10,7 +10,9 @@ const t = config.resource.enabled ? test : test.skip;
 
 let createdId: string | undefined;
 
-test.describe.serial('Items CRUD lifecycle', () => {
+test.describe('Items CRUD lifecycle', { tag: ['@api'] }, () => {
+  test.describe.configure({ mode: 'serial' });
+
   t('create returns 201 with an id', async ({ authRequest }) => {
     const res = await authRequest.post(resource, { data: createPayload });
     expectStatus(res, 201);

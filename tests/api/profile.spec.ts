@@ -4,7 +4,7 @@ import { config } from '@/config';
 const endpoint = config.profile.endpoint;
 const t = endpoint ? test : test.skip;
 
-test.describe('Profile / protected endpoint', () => {
+test.describe('Profile / protected endpoint', { tag: ['@api'] }, () => {
   t('authenticated access succeeds', async ({ authRequest }) => {
     const res = await authRequest.get(endpoint);
     expect(res.ok(), `${res.status()} ${res.statusText()}`).toBeTruthy();
