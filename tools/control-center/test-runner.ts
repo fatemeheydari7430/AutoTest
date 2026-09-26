@@ -8,15 +8,25 @@ import {
 } from '../../src/config/test-options.ts';
 
 export type RunProduct = 'car' | 'health';
+export type RunMode = 'e2e' | 'api';
 export type RunStatus = 'passed' | 'failed' | 'stopped';
 export type ScenarioStatus = RunStatus | 'not-run';
 export type BatchStatus = 'running' | 'completed' | 'stopped' | 'failed';
 
+export interface RunSummary {
+  passed: number;
+  failed: number;
+  skipped: number;
+}
+
 export interface RunResult {
   product: RunProduct;
+  target: string;
+  mode: RunMode;
   status: RunStatus;
   duration: number;
   trackingCode: string | null;
+  summary: RunSummary | null;
   finishedAt: string;
   error: string | null;
 }
@@ -44,8 +54,9 @@ export interface BatchResult {
 
 export interface RunState {
   running: boolean;
-  mode: 'single' | 'batch' | null;
+  mode: RunMode | null;
   product?: RunProduct;
+  target?: string;
   startedAt?: number;
   currentScenario: { index: number; total: number; name: string } | null;
   last: RunResult | null;
@@ -58,12 +69,39 @@ export interface TestOptions {
 }
 
 /**
- * Playwright CLI runner for the Control Center. It shells out to the existing
- * CLI (same projects/specs as `npm run test:car` / `test:health`) and never
- * injects env: the specs read the saved runtime config. Only a compact,
- * non-sensitive result (status/duration/tracking code/error) is persisted. The
- * live log is kept in memory only (bounded), never written to disk.
+ * Whitelisted run targets. The browser can only ever send a known target id;
+ * the server maps it to a fixed command. No arbitrary command/path is accepted.
  */
+export type RunTarget =
+  | 'car-e2e'
+  | 'health-e2e'
+  | 'car-api-happy'
+  | 'car-api-negative'
+  | 'health-api-happy'
+  | 'health-api-negative';
+
+interface TargetConfig {
+  product: RunProduct;
+  mode: RunMode;
+  project: string;
+  spec: string;
+}
+
+export const TARGET_CONFIG: Record<RunTarget, TargetConfig> = {
+  'car-e2e': { product: 'car', mode: 'e2e', project: 'e2e-chromium', spec: 'tests/e2e/car-purchase.spec.ts' },
+  'health-e2e': { product: 'health', mode: 'e2e', project: 'e2e-chromium', spec: 'tests/e2e/health-purchase.spec.ts' },
+  'car-api-happy': { product: 'car', mode: 'api', project: 'api', spec: 'tests/api/car-purchase.spec.ts' },
+  'car-api-negative': { product: 'car', mode: 'api', project: 'api', spec: 'tests/api/car-negative.spec.ts' },
+  'health-api-happy': { product: 'health', mode: 'api', project: 'api', spec: 'tests/api/health-purchase.spec.ts' },
+  'health-api-negative': { product: 'health', mode: 'api', project: 'api', spec: 'tests/api/health-negative.spec.ts' },
+};
+
+export const RUN_TARGETS = Object.keys(TARGET_CONFIG) as RunTarget[];
+
+export function isRunTarget(value: unknown): value is RunTarget {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(TARGET_CONFIG, value);
+}
+
 const RUNTIME_DIR = path.resolve(process.cwd(), 'test-data', 'e2e', 'runtime');
 const LAST_RUN_FILE = path.join(RUNTIME_DIR, 'last-run.json');
 const LAST_BATCH_FILE = path.join(RUNTIME_DIR, 'last-batch.json');
@@ -73,18 +111,15 @@ const LIVE_REPORTER = './tools/control-center/live-reporter.ts';
 const EVENT_MARKER = 'CONTROL_CENTER_EVENT ';
 const MAX_LINES = 300;
 
-const SPECS: Record<RunProduct, string> = {
-  car: 'tests/e2e/car-purchase.spec.ts',
-  health: 'tests/e2e/health-purchase.spec.ts',
-};
-
 interface Controller {
   mode: 'single' | 'batch';
+  target: RunTarget;
   product: RunProduct;
   startedAt: number;
   childStartedAt: number | null;
   output: string[];
   trackingCode: string | null;
+  summary: RunSummary | null;
   stopped: boolean;
   child: ChildProcess | null;
   scenarios?: ScenarioDefinition[];
@@ -248,8 +283,9 @@ export function runState(): RunState {
   }
   return {
     running: active !== null,
-    mode: active?.mode ?? null,
+    mode: active ? TARGET_CONFIG[active.target].mode : null,
     product: active?.product,
+    target: active?.target,
     startedAt: active?.startedAt,
     currentScenario,
     last: loadLastRun(),
@@ -260,7 +296,9 @@ export function runState(): RunState {
 
 // ---- child process handling ----
 
-function modeLine(): string {
+function modeLine(target: RunTarget): string {
+  const config = TARGET_CONFIG[target];
+  if (config.mode === 'api') return 'Running mode: API (no browser)';
   return `Running mode: ${loadTestOptions().execution.headed ? 'HEADED (browser visible)' : 'HEADLESS'}`;
 }
 
@@ -274,7 +312,14 @@ function handleLine(controller: Controller, line: string): void {
   if (markerIndex >= 0) {
     const payload = line.slice(markerIndex + EVENT_MARKER.length).trim();
     try {
-      const event = JSON.parse(payload) as { type?: string; product?: string; value?: unknown };
+      const event = JSON.parse(payload) as {
+        type?: string;
+        product?: string;
+        value?: unknown;
+        passed?: unknown;
+        failed?: unknown;
+        skipped?: unknown;
+      };
       if (
         event.type === 'tracking-code' &&
         (event.product === 'car' || event.product === 'health') &&
@@ -283,6 +328,14 @@ function handleLine(controller: Controller, line: string): void {
       ) {
         controller.trackingCode = event.value;
         controller.output.push(`Tracking code: ${event.value}`);
+        return;
+      }
+      if (event.type === 'summary') {
+        const passed = typeof event.passed === 'number' ? event.passed : 0;
+        const failed = typeof event.failed === 'number' ? event.failed : 0;
+        const skipped = typeof event.skipped === 'number' ? event.skipped : 0;
+        controller.summary = { passed, failed, skipped };
+        controller.output.push(`Summary: ${passed} passed, ${failed} failed, ${skipped} skipped`);
         return;
       }
     } catch {
@@ -294,27 +347,23 @@ function handleLine(controller: Controller, line: string): void {
 }
 
 function beginChild(controller: Controller): void {
+  const config = TARGET_CONFIG[controller.target];
   const cli = path.resolve(process.cwd(), 'node_modules', '@playwright', 'test', 'cli.js');
-  const headed = loadTestOptions().execution.headed;
-  const args = [
-    cli,
-    'test',
-    '--project=e2e-chromium',
-    SPECS[controller.product],
-    '--retries=0',
-    `--reporter=${LIVE_REPORTER}`,
-  ];
+  const args = [cli, 'test', `--project=${config.project}`, config.spec, '--retries=0', `--reporter=${LIVE_REPORTER}`];
+
+  // API runs never open a browser; execution mode only applies to E2E.
+  const headed = config.mode === 'e2e' && loadTestOptions().execution.headed;
   if (headed) args.push('--headed');
 
   const child = spawn(process.execPath, args, {
     cwd: process.cwd(),
-    // A headed run must be able to create a real browser window.
     windowsHide: !headed,
   });
 
   controller.child = child;
   controller.childStartedAt = Date.now();
   controller.trackingCode = null;
+  controller.summary = null;
 
   const onData = (chunk: Buffer): void => {
     for (const raw of chunk.toString('utf8').split(/\r?\n/)) {
@@ -333,27 +382,31 @@ function beginChild(controller: Controller): void {
   child.once('close', (code) => onChildClose(controller, code, null));
 }
 
+function saveRunResult(controller: Controller, status: RunStatus, error: string | null, duration: number): void {
+  const config = TARGET_CONFIG[controller.target];
+  saveLastRun({
+    product: controller.product,
+    target: controller.target,
+    mode: config.mode,
+    status,
+    duration,
+    trackingCode: controller.trackingCode,
+    summary: controller.summary,
+    finishedAt: new Date().toISOString(),
+    error,
+  });
+}
+
 function onChildClose(controller: Controller, code: number | null, errorMessage: string | null): void {
   controller.child = null;
   const duration = Date.now() - (controller.childStartedAt ?? controller.startedAt);
-  const status: RunStatus = controller.stopped
-    ? 'stopped'
-    : code === 0
-      ? 'passed'
-      : 'failed';
+  const status: RunStatus = controller.stopped ? 'stopped' : code === 0 ? 'passed' : 'failed';
   const error = status === 'failed' ? errorMessage ?? extractError(controller.output) : null;
 
   if (controller.stopped) controller.output.push('Test stopped by user.');
 
   if (controller.mode === 'single') {
-    saveLastRun({
-      product: controller.product,
-      status,
-      duration,
-      trackingCode: controller.trackingCode,
-      finishedAt: new Date().toISOString(),
-      error,
-    });
+    saveRunResult(controller, status, error, duration);
     retained = { product: controller.product, lines: [...controller.output] };
     active = null;
     return;
@@ -370,14 +423,7 @@ function onChildClose(controller: Controller, code: number | null, errorMessage:
       error,
     };
   }
-  saveLastRun({
-    product: controller.product,
-    status,
-    duration,
-    trackingCode: controller.trackingCode,
-    finishedAt: new Date().toISOString(),
-    error,
-  });
+  saveRunResult(controller, status, error, duration);
 
   if (controller.stopped) {
     for (let i = index + 1; i < (controller.results?.length ?? 0); i += 1) {
@@ -419,15 +465,17 @@ function finishBatch(controller: Controller, status: BatchStatus): void {
 
 // ---- public actions ----
 
-export function runTest(product: RunProduct): { started: boolean; message?: string } {
+export function runTest(target: RunTarget): { started: boolean; message?: string } {
   if (active) return { started: false, message: `A ${active.product} run is already active` };
   const controller: Controller = {
     mode: 'single',
-    product,
+    target,
+    product: TARGET_CONFIG[target].product,
     startedAt: Date.now(),
     childStartedAt: null,
-    output: [modeLine(), ''],
+    output: [modeLine(target), ''],
     trackingCode: null,
+    summary: null,
     stopped: false,
     child: null,
   };
@@ -452,11 +500,13 @@ export function startBatch(
 
   const controller: Controller = {
     mode: 'batch',
+    target: `${product}-e2e` as RunTarget,
     product,
     startedAt: Date.now(),
     childStartedAt: null,
-    output: [modeLine(), ''],
+    output: [modeLine(`${product}-e2e` as RunTarget), ''],
     trackingCode: null,
+    summary: null,
     stopped: false,
     child: null,
     scenarios,

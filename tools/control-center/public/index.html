@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Lookinsure QA Control Center</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/vendor/codemirror/lib/codemirror.css" />
+    <link rel="stylesheet" href="/vendor/codemirror/addon/fold/foldgutter.css" />
   </head>
   <body>
     <header class="topbar">
@@ -22,8 +24,9 @@
     <div id="message" class="message" hidden></div>
 
     <nav class="tabs">
-      <button class="tab active" data-tab="car">Car Insurance</button>
-      <button class="tab" data-tab="health">Health Insurance</button>
+      <button class="tab active" data-tab="car">Car</button>
+      <button class="tab" data-tab="health">Health</button>
+      <button class="tab" data-tab="api">API Tests</button>
     </nav>
 
     <div class="runbar">
@@ -125,6 +128,7 @@
           <button id="car-reset">Reset Default</button>
           <button id="car-run">Run Car Test</button>
           <button id="car-json">View / Edit JSON</button>
+          <button id="car-add-form-scenario">Add Form Configuration as Scenario</button>
           <span id="car-source" class="source"></span>
         </div>
 
@@ -184,11 +188,31 @@
           <button id="health-reset">Reset Default</button>
           <button id="health-run">Run Health Test</button>
           <button id="health-json">View / Edit JSON</button>
+          <button id="health-add-form-scenario">Add Form Configuration as Scenario</button>
           <span id="health-source" class="source"></span>
         </div>
 
         <h2>Last Result</h2>
         <div id="health-last-result" class="result">No run yet.</div>
+      </section>
+
+      <section id="panel-api" class="panel">
+        <p class="source">Runs the existing API test suites. API tests do not open a browser.</p>
+
+        <h2>Car Insurance</h2>
+        <div class="actions">
+          <button id="api-car-happy">Run Happy Path</button>
+          <button id="api-car-negative">Run Negative Tests</button>
+        </div>
+
+        <h2>Health Insurance</h2>
+        <div class="actions">
+          <button id="api-health-happy">Run Happy Path</button>
+          <button id="api-health-negative">Run Negative Tests</button>
+        </div>
+
+        <h2>Last API Result</h2>
+        <div id="api-last-result" class="result">No API run yet.</div>
       </section>
     </main>
 
@@ -202,6 +226,7 @@
         <h3>Configuration</h3>
         <textarea id="config-json" class="json-area" spellcheck="false"></textarea>
         <div class="actions">
+          <button id="json-reload">Reload from Form</button>
           <button id="json-format">Format JSON</button>
           <button id="json-validate">Validate JSON</button>
           <button id="json-apply" class="primary">Apply to Form</button>
@@ -211,7 +236,7 @@
         <h3>Batch Scenarios</h3>
         <textarea id="batch-json" class="json-area" spellcheck="false"></textarea>
         <div class="actions">
-          <button id="batch-add-current">Add Current Configuration as Scenario</button>
+          <button id="batch-add-json">Add JSON Configuration as Scenario</button>
           <button id="batch-format">Format JSON</button>
           <button id="batch-validate">Validate Batch</button>
           <button id="batch-run" class="primary">Run All Scenarios</button>
@@ -234,6 +259,12 @@
       </div>
     </div>
 
+    <script src="/vendor/codemirror/lib/codemirror.js"></script>
+    <script src="/vendor/codemirror/mode/javascript/javascript.js"></script>
+    <script src="/vendor/codemirror/addon/fold/foldcode.js"></script>
+    <script src="/vendor/codemirror/addon/fold/foldgutter.js"></script>
+    <script src="/vendor/codemirror/addon/fold/brace-fold.js"></script>
+    <script src="/vendor/codemirror/addon/edit/matchbrackets.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

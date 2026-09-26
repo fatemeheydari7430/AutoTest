@@ -1,6 +1,6 @@
 import { test, expect } from '@/fixtures';
 import { config } from '@/config';
-import { expectStatus, asJson, expectSuccess } from '@/utils/api';
+import { expectStatus, asJson, expectSuccess, emitControlCenterEvent } from '@/utils/api';
 import happyPath from '../../test-data/api/health-happy-path.json';
 
 const base = config.healthInsurance.basePath;
@@ -68,6 +68,7 @@ test.describe('Health insurance API / happy path', { tag: ['@health', '@api', '@
       expect(body.response.tracking_code, 'tracking_code').toBeTruthy();
       expect(body.response.next_step).toBe('SELECT_GENDER');
       trackingCode = body.response.tracking_code!;
+      emitControlCenterEvent({ type: 'tracking-code', product: 'health', value: trackingCode });
     });
 
     await test.step('Set gender', async () => {

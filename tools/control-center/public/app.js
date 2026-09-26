@@ -439,6 +439,7 @@ async function resetCar() {
     return;
   }
   applyCarConfig(data.config);
+  configBuffers.car = null;
   $("car-preset").value = "default";
   $("car-source").textContent = "Active source: runtime";
   showMessage("ok", ["Car config reset to default preset."]);
@@ -451,6 +452,7 @@ async function resetHealth() {
     return;
   }
   applyHealthConfig(data.config);
+  configBuffers.health = null;
   $("health-preset").value = "default";
   $("health-source").textContent = "Active source: runtime";
   showMessage("ok", ["Health config reset to default preset."]);
@@ -609,14 +611,14 @@ function renderResult(product, state) {
   el.innerHTML = "";
   el.className = "result";
 
-  if (state.running && state.product === product && state.mode === "single") {
+  if (state.running && state.target === `${product}-e2e`) {
     el.classList.add("running");
     el.appendChild(resultRow("Status", "Running..."));
     el.appendChild(resultRow("Duration", formatDuration(Date.now() - state.startedAt)));
     return;
   }
 
-  const last = state.last && state.last.product === product ? state.last : null;
+  const last = state.last && state.last.target === `${product}-e2e` ? state.last : null;
   if (!last) {
     el.textContent = "No run yet.";
     return;
@@ -677,6 +679,10 @@ const RUN_CONTROL_IDS = [
   "car-reset",
   "health-save",
   "health-reset",
+  "api-car-happy",
+  "api-car-negative",
+  "api-health-happy",
+  "api-health-negative",
 ];
 
 function setRunButtonsDisabled(disabled) {
@@ -694,6 +700,7 @@ async function refreshRunStatus() {
     const data = await fetch("/api/run/status").then((response) => response.json());
     renderResult("car", data);
     renderResult("health", data);
+    renderApiResult(data);
     renderConsole(data);
     renderBatch(data);
     setRunButtonsDisabled(data.running);
@@ -721,6 +728,63 @@ async function stopCurrentRun() {
 // ---- JSON editor + batch scenarios ----
 
 let jsonModalProduct = null;
+let activeEditorProduct = null;
+const configBuffers = { car: null, health: null };
+const batchBuffers = { car: null, health: null };
+const editors = { config: null, batch: null };
+
+function initEditors() {
+  if (editors.config || typeof CodeMirror === "undefined") return;
+  const common = {
+    mode: { name: "javascript", json: true },
+    lineNumbers: true,
+    foldGutter: true,
+    gutters: ["CodeMirror-linenumbers", "CodeMirror-foldgutter"],
+    matchBrackets: true,
+    indentUnit: 2,
+    tabSize: 2,
+  };
+  editors.config = CodeMirror.fromTextArea($("config-json"), common);
+  editors.batch = CodeMirror.fromTextArea($("batch-json"), common);
+}
+
+function editorValue(which) {
+  if (editors[which]) return editors[which].getValue();
+  return $(which === "config" ? "config-json" : "batch-json").value;
+}
+
+function setEditorValue(which, value) {
+  if (editors[which]) editors[which].setValue(value);
+  else $(which === "config" ? "config-json" : "batch-json").value = value;
+}
+
+function refreshEditors() {
+  if (editors.config) editors.config.refresh();
+  if (editors.batch) editors.batch.refresh();
+}
+
+function configBufferText(product) {
+  return configBuffers[product] != null ? configBuffers[product] : pretty(currentConfig(product));
+}
+
+function batchBufferText(product) {
+  return batchBuffers[product] != null ? batchBuffers[product] : pretty({ product, scenarios: [] });
+}
+
+function readBatchBuffer(product) {
+  try {
+    return JSON.parse(batchBufferText(product));
+  } catch {
+    return { product, scenarios: [] };
+  }
+}
+
+function writeBatchBuffer(product, batch) {
+  batchBuffers[product] = pretty(batch);
+  if (activeEditorProduct === product && editors.batch) {
+    editors.batch.setValue(batchBuffers[product]);
+  }
+}
 
 function currentConfig(product) {
   return product === "car" ? collectCarConfig() : collectHealthConfig();
@@ -757,26 +821,42 @@ function showJsonErrors(containerId, lines) {
 }
 
 function openJsonModal(product) {
+  // Preserve unsaved buffers when switching between products.
+  if (activeEditorProduct && activeEditorProduct !== product) {
+    configBuffers[activeEditorProduct] = editorValue("config");
+    batchBuffers[activeEditorProduct] = editorValue("batch");
+  }
+  activeEditorProduct = product;
   jsonModalProduct = product;
   $("json-modal-title").textContent = `${product === "car" ? "Car" : "Health"} Configuration JSON`;
-  $("config-json").value = pretty(currentConfig(product));
-  if (!$("batch-json").value.trim()) {
-    $("batch-json").value = pretty({ product, scenarios: [] });
-  }
+  setEditorValue("config", configBufferText(product));
+  setEditorValue("batch", batchBufferText(product));
   showJsonErrors("json-errors", []);
   showJsonErrors("batch-errors", []);
   $("json-modal").hidden = false;
+  refreshEditors();
   refreshRunStatus();
 }
 
 function closeJsonModal() {
+  if (activeEditorProduct) {
+    configBuffers[activeEditorProduct] = editorValue("config");
+    batchBuffers[activeEditorProduct] = editorValue("batch");
+  }
   $("json-modal").hidden = true;
   jsonModalProduct = null;
 }
 
-function formatJson(id, errorsId) {
+function reloadConfigFromForm() {
+  if (!jsonModalProduct) return;
+  configBuffers[jsonModalProduct] = null;
+  setEditorValue("config", pretty(currentConfig(jsonModalProduct)));
+  showJsonErrors("json-errors", []);
+}
+
+function formatEditor(which, errorsId) {
   try {
-    $(id).value = pretty(JSON.parse($(id).value));
+    setEditorValue(which, pretty(JSON.parse(editorValue(which))));
     showJsonErrors(errorsId, []);
   } catch (error) {
     showJsonErrors(errorsId, [`Invalid JSON: ${error.message}`]);
@@ -787,7 +867,7 @@ async function validateConfigJson() {
   if (!jsonModalProduct) return null;
   let parsed;
   try {
-    parsed = JSON.parse($("config-json").value);
+    parsed = JSON.parse(editorValue("config"));
   } catch (error) {
     showJsonErrors("json-errors", [`Invalid JSON: ${error.message}`]);
     return null;
@@ -809,36 +889,47 @@ async function applyConfigJson() {
   showMessage("ok", ["JSON applied to the form. Click Save Configuration to persist."]);
 }
 
-function addCurrentAsScenario() {
+/** JSON View source: builds a scenario from the editor buffer (with validation). */
+async function addJsonAsScenario() {
   if (!jsonModalProduct) return;
-  let batch;
-  try {
-    batch = JSON.parse($("batch-json").value);
-  } catch (error) {
-    showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
+  const parsed = await validateConfigJson();
+  if (!parsed) return;
+  pushScenario(jsonModalProduct, parsed);
+  showJsonErrors("batch-errors", []);
+}
+
+/** Form View source: builds a scenario from the live form (validated). */
+async function addFormAsScenario(product) {
+  const { ok, data } = await request(`/api/config/${product}/validate`, "POST", currentConfig(product));
+  if (!ok) {
+    showMessage("error", ["Current configuration is invalid", ...(data.errors ?? [])]);
     return;
   }
-  if (batch.product && batch.product !== jsonModalProduct) {
-    showJsonErrors("batch-errors", [`Batch product must be "${jsonModalProduct}"`]);
+  pushScenario(product, currentConfig(product));
+  showMessage("ok", ["Current form configuration added as a scenario."]);
+}
+
+function pushScenario(product, config) {
+  const batch = readBatchBuffer(product);
+  if (batch.product && batch.product !== product) {
+    showJsonErrors("batch-errors", [`Batch product must be "${product}"`]);
     return;
   }
-  batch.product = jsonModalProduct;
+  batch.product = product;
   if (!Array.isArray(batch.scenarios)) batch.scenarios = [];
-  // Clone the CURRENT form state (even if unsaved) as an independent deep copy,
-  // so later edits to the scenario or the form cannot mutate each other.
+  // Deep clone so scenario edits and the source (form or editor) never share refs.
   batch.scenarios.push({
     name: `Scenario ${batch.scenarios.length + 1}`,
-    config: deepClone(currentConfig(jsonModalProduct)),
+    config: deepClone(config),
   });
-  $("batch-json").value = pretty(batch);
-  showJsonErrors("batch-errors", []);
+  writeBatchBuffer(product, batch);
 }
 
 async function validateBatchJson() {
   if (!jsonModalProduct) return null;
   let parsed;
   try {
-    parsed = JSON.parse($("batch-json").value);
+    parsed = JSON.parse(editorValue("batch"));
   } catch (error) {
     showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
     return null;
@@ -882,11 +973,51 @@ async function runBatchJson() {
   await refreshRunStatus();
 }
 
-async function startRun(product) {
+const API_TARGETS = {
+  "car-api-happy": "Car API Happy Path",
+  "car-api-negative": "Car API Negative",
+  "health-api-happy": "Health API Happy Path",
+  "health-api-negative": "Health API Negative",
+};
+
+function renderApiResult(state) {
+  const el = $("api-last-result");
+  if (!el) return;
+  el.innerHTML = "";
+  el.className = "result";
+
+  if (state.running && state.mode === "api") {
+    el.classList.add("running");
+    el.appendChild(resultRow("Status", "Running..."));
+    el.appendChild(resultRow("Duration", formatDuration(Date.now() - state.startedAt)));
+    el.appendChild(resultRow("Target", API_TARGETS[state.target] ?? state.target ?? ""));
+    return;
+  }
+
+  const last = state.last && state.last.mode === "api" ? state.last : null;
+  if (!last) {
+    el.textContent = "No API run yet.";
+    return;
+  }
+
+  el.classList.add(last.status);
+  el.appendChild(resultRow("Target", API_TARGETS[last.target] ?? last.target));
+  el.appendChild(resultRow("Status", statusLabel(last.status)));
+  el.appendChild(resultRow("Duration", formatDuration(last.duration)));
+  if (last.summary) {
+    el.appendChild(resultRow("Passed", String(last.summary.passed)));
+    el.appendChild(resultRow("Failed", String(last.summary.failed)));
+    el.appendChild(resultRow("Skipped", String(last.summary.skipped)));
+  }
+  if (last.trackingCode) el.appendChild(trackingRow(last.trackingCode));
+  if (last.error) el.appendChild(resultRow("Error", last.error));
+}
+
+async function startRun(target) {
   clearMessage();
 
-  // Persist the currently selected execution mode first, so Run always honors
-  // it even if the user did not press Save after toggling the radio.
+  // Persist the currently selected execution mode first, so E2E Run always
+  // honors it even without Save. API runs ignore it (no browser).
   const testOptions = await saveTestOptions();
   if (!testOptions.ok) {
     showMessage("error", [
@@ -896,9 +1027,9 @@ async function startRun(product) {
     return;
   }
 
-  const { ok, data } = await request("/api/run", "POST", { product });
+  const { ok, data } = await request("/api/run", "POST", { target });
   if (!ok) {
-    showMessage("error", [data.errors?.[0] ?? `Could not start ${product} test`]);
+    showMessage("error", [data.errors?.[0] ?? `Could not start ${target}`]);
     return;
   }
   setRunButtonsDisabled(true);
@@ -919,9 +1050,11 @@ function wireEvents() {
 
   $("car-preset").addEventListener("change", (event) => {
     applyCarConfig(carPresets[event.target.value]);
+    configBuffers.car = null;
   });
   $("health-preset").addEventListener("change", (event) => {
     applyHealthConfig(healthPresets[event.target.value]);
+    configBuffers.health = null;
   });
 
   $("panel-car").addEventListener("input", updateCarSummary);
@@ -934,20 +1067,28 @@ function wireEvents() {
   $("health-save").addEventListener("click", saveHealth);
   $("health-reset").addEventListener("click", resetHealth);
   $("open-ui").addEventListener("click", openUi);
-  $("car-run").addEventListener("click", () => startRun("car"));
-  $("health-run").addEventListener("click", () => startRun("health"));
-  $("run-car-top").addEventListener("click", () => startRun("car"));
-  $("run-health-top").addEventListener("click", () => startRun("health"));
+  $("car-run").addEventListener("click", () => startRun("car-e2e"));
+  $("health-run").addEventListener("click", () => startRun("health-e2e"));
+  $("run-car-top").addEventListener("click", () => startRun("car-e2e"));
+  $("run-health-top").addEventListener("click", () => startRun("health-e2e"));
+  $("api-car-happy").addEventListener("click", () => startRun("car-api-happy"));
+  $("api-car-negative").addEventListener("click", () => startRun("car-api-negative"));
+  $("api-health-happy").addEventListener("click", () => startRun("health-api-happy"));
+  $("api-health-negative").addEventListener("click", () => startRun("health-api-negative"));
   $("stop-test").addEventListener("click", stopCurrentRun);
+
+  $("car-add-form-scenario").addEventListener("click", () => addFormAsScenario("car"));
+  $("health-add-form-scenario").addEventListener("click", () => addFormAsScenario("health"));
 
   $("car-json").addEventListener("click", () => openJsonModal("car"));
   $("health-json").addEventListener("click", () => openJsonModal("health"));
   $("json-close").addEventListener("click", closeJsonModal);
-  $("json-format").addEventListener("click", () => formatJson("config-json", "json-errors"));
+  $("json-reload").addEventListener("click", reloadConfigFromForm);
+  $("json-format").addEventListener("click", () => formatEditor("config", "json-errors"));
   $("json-validate").addEventListener("click", validateConfigJson);
   $("json-apply").addEventListener("click", applyConfigJson);
-  $("batch-format").addEventListener("click", () => formatJson("batch-json", "batch-errors"));
-  $("batch-add-current").addEventListener("click", addCurrentAsScenario);
+  $("batch-format").addEventListener("click", () => formatEditor("batch", "batch-errors"));
+  $("batch-add-json").addEventListener("click", addJsonAsScenario);
   $("batch-validate").addEventListener("click", validateBatchJson);
   $("batch-run").addEventListener("click", runBatchJson);
 }
@@ -970,6 +1111,7 @@ async function init() {
     applyHealthConfig(healthData.config);
     $("car-source").textContent = `Active source: ${carData.source}`;
     $("health-source").textContent = `Active source: ${healthData.source}`;
+    initEditors();
     wireEvents();
     await refreshRunStatus();
   } catch (error) {

@@ -33,10 +33,12 @@ import {
   PLAYWRIGHT_UI_PORT,
 } from './playwright-launcher.ts';
 import {
+  isRunTarget,
   loadTestOptions,
   recoverBatchBackup,
   runState,
   runTest,
+  RUN_TARGETS,
   saveTestOptions,
   startBatch,
   stopActive,
@@ -47,6 +49,7 @@ import {
 } from './test-runner.ts';
 
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'public');
+const CODEMIRROR_DIR = path.resolve(process.cwd(), 'node_modules', 'codemirror');
 const CC_PORT = Number(process.env.CC_PORT ?? 4600);
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -77,6 +80,27 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
 
 function configSource(runtimePath: string): 'runtime' | 'preset-default' {
   return fs.existsSync(runtimePath) ? 'runtime' : 'preset-default';
+}
+
+/** Serves CodeMirror from local node_modules (no CDN; works offline). */
+function serveVendor(res: http.ServerResponse, url: URL): void {
+  const relative = url.pathname.replace(/^\/vendor\/codemirror\//, '');
+  const resolved = path.resolve(CODEMIRROR_DIR, relative);
+  if (
+    !resolved.startsWith(CODEMIRROR_DIR) ||
+    !/\.(js|css)$/i.test(resolved) ||
+    !fs.existsSync(resolved) ||
+    !fs.statSync(resolved).isFile()
+  ) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
+  const type = path.extname(resolved).toLowerCase() === '.css'
+    ? 'text/css; charset=utf-8'
+    : 'text/javascript; charset=utf-8';
+  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+  fs.createReadStream(resolved).pipe(res);
 }
 
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: URL): void {
@@ -293,15 +317,18 @@ async function handleApi(
       } catch {
         return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
       }
-      const product = (body as { product?: string } | undefined)?.product;
-      if (product !== 'car' && product !== 'health') {
-        return sendJson(res, 400, { ok: false, errors: ['product must be "car" or "health"'] });
+      const target = (body as { target?: unknown } | undefined)?.target;
+      if (!isRunTarget(target)) {
+        return sendJson(res, 400, {
+          ok: false,
+          errors: [`target must be one of: ${RUN_TARGETS.join(', ')}`],
+        });
       }
-      const result = runTest(product as RunProduct);
+      const result = runTest(target);
       if (!result.started) {
         return sendJson(res, 409, { ok: false, errors: [result.message ?? 'A test is already running'] });
       }
-      return sendJson(res, 200, { ok: true, product });
+      return sendJson(res, 200, { ok: true, target });
     }
 
     default:
@@ -316,6 +343,10 @@ function handler(req: http.IncomingMessage, res: http.ServerResponse): void {
       const message = error instanceof Error ? error.message : String(error);
       sendJson(res, 500, { ok: false, errors: [message] });
     });
+    return;
+  }
+  if (url.pathname.startsWith('/vendor/codemirror/')) {
+    serveVendor(res, url);
     return;
   }
   serveStatic(req, res, url);

@@ -1,6 +1,6 @@
 import { test, expect } from '@/fixtures';
 import { config } from '@/config';
-import { expectStatus, asJson, expectSuccess } from '@/utils/api';
+import { expectStatus, asJson, expectSuccess, emitControlCenterEvent } from '@/utils/api';
 import happyPath from '../../test-data/api/car-happy-path.json';
 
 const base = config.carInsurance.basePath;
@@ -65,6 +65,7 @@ test.describe('Car insurance API / happy path', { tag: ['@car', '@api', '@smoke'
       expectSuccess(body);
       expect(body.response.tracking_code, 'tracking_code').toBeTruthy();
       trackingCode = body.response.tracking_code!;
+      emitControlCenterEvent({ type: 'tracking-code', product: 'car', value: trackingCode });
     });
 
     await test.step('Set information source', async () => {

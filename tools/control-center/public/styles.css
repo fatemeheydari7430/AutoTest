@@ -389,6 +389,35 @@ button.copy {
   color: var(--muted);
 }
 
+.CodeMirror {
+  height: auto;
+  min-height: 200px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0b1220;
+  color: #cbd5e1;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.CodeMirror-gutters {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+
+.CodeMirror-linenumber {
+  color: var(--muted);
+}
+
+.CodeMirror-cursor {
+  border-left: 1px solid #e2e8f0;
+}
+
+.CodeMirror-foldmarker {
+  color: #93c5fd;
+}
+
 .result {
   border: 1px solid var(--border);
   border-radius: 8px;
