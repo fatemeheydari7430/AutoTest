@@ -17,8 +17,8 @@ export class CarInsurancePage extends BasePage {
     }
     await this.goto(path);
     await expect(
-      this.page.getByRole('heading', { name: /details about your car/i }),
-      'Car flow entry page did not load',
+      this.page.getByText('Manual entry', { exact: true }),
+      'Car flow entry options did not load',
     ).toBeVisible();
   }
 

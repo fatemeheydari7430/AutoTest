@@ -24,6 +24,7 @@ test.describe(
     test.setTimeout(300_000);
 
     test('reaches the payment screen for a health insurance purchase', async ({
+      page,
       appAuth,
       healthInsurancePage,
       healthQuestionnairePage,
@@ -74,8 +75,16 @@ test.describe(
       });
 
       await test.step('Verify payment page', async () => {
-        // Stop at the payment screen: no method selected, no "Pay Now" click.
         await healthPaymentPage.expectLoaded();
+      });
+
+      const gatewayPage = await test.step('Open payment gateway', async () => {
+        return healthPaymentPage.payNow();
+      });
+
+      await test.step('Wait on payment gateway and close browser', async () => {
+        await gatewayPage.waitForTimeout(5_000);
+        await page.context().close();
       });
     });
   },
