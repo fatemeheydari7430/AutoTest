@@ -10,6 +10,14 @@ function uiLabel(map: Record<string, string>, value: string, context: string): s
 }
 
 export class DrivingHistoryPage extends BasePage {
+  private isEmptyListUrl(): boolean {
+    try {
+      return new URL(this.page.url()).searchParams.get('reason') === 'EMPTY_LIST';
+    } catch {
+      return false;
+    }
+  }
+
   async answerLicenseDuration(drivingExperience: string): Promise<void> {
     await this.expectStepText(
       'How long have you held the UAE driving license?',
@@ -20,13 +28,26 @@ export class DrivingHistoryPage extends BasePage {
       .click();
   }
 
-  async answerClaims(claims: string): Promise<void> {
-    await this.expectStepText(
-      'How long without any claims?',
-      'Claims history step did not load',
-    );
-    await this.page
-      .getByRole('button', { name: uiLabel(CLAIMS, claims, 'claims'), exact: true })
-      .click();
+  async answerClaims(claims: string): Promise<boolean> {
+    const claimsPrompt = this.page.getByText('How long without any claims?').first();
+    const quotesHeading = this.page.getByText('Choose affordable quotes').first();
+    const emptyList = this.page.getByText(/empty list|no available quotes|no quotes found/i).first();
+    const deadline = Date.now() + 30_000;
+
+    while (Date.now() < deadline) {
+      if (this.isEmptyListUrl()) return false;
+      if (await claimsPrompt.isVisible().catch(() => false)) {
+        await this.page
+          .getByRole('button', { name: uiLabel(CLAIMS, claims, 'claims'), exact: true })
+          .click();
+        return true;
+      }
+      // Some driving-experience choices skip claims and go straight to quotes.
+      if (await quotesHeading.isVisible().catch(() => false)) return false;
+      if (await emptyList.isVisible().catch(() => false)) return false;
+      await this.page.waitForTimeout(200);
+    }
+
+    throw new Error('Neither the claims step nor the car quotes page appeared after selecting driving experience');
   }
 }

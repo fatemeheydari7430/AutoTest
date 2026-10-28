@@ -28,6 +28,93 @@
           "email": "test@example.com"
         }
       }
+    },
+    {
+      "name": "Scenario 2",
+      "config": {
+        "leadType": "RENEW",
+        "vehicle": {
+          "brand": "Toyota",
+          "model": "COROLLA",
+          "year": "2025",
+          "trim": "XLI-1.5 L-3cyl-10gear-119 HP"
+        },
+        "specification": "GCC",
+        "emirate": "ajman",
+        "driver": {
+          "nationality": "United Arab Emirates",
+          "dateOfBirth": {
+            "year": "1995",
+            "month": "February",
+            "day": "1"
+          }
+        },
+        "history": {
+          "drivingExperience": "LESS_THAN_ONE_YEAR",
+          "claims": "CLAIM_0"
+        },
+        "contact": {
+          "email": "test2@example.com"
+        }
+      }
+    },
+    {
+      "name": "Scenario 3",
+      "config": {
+        "leadType": "RENEW",
+        "vehicle": {
+          "brand": "Toyota",
+          "model": "COROLLA",
+          "year": "2024",
+          "trim": "GLI-1.6 L-121 HP"
+        },
+        "specification": "GCC",
+        "emirate": "dubai",
+        "driver": {
+          "nationality": "India",
+          "dateOfBirth": {
+            "year": "1995",
+            "month": "June",
+            "day": "15"
+          }
+        },
+        "history": {
+          "drivingExperience": "MORE_THAN_FIVE_YEAR",
+          "claims": "CLAIM_FREE_OVER_4"
+        },
+        "contact": {
+          "email": "qa.testing@example.com"
+        }
+      }
+    },
+    {
+      "name": "Scenario 4",
+      "config": {
+        "leadType": "RENEW",
+        "vehicle": {
+          "brand": "Toyota",
+          "model": "COROLLA",
+          "year": "2024",
+          "trim": "GLI-1.6 L-121 HP"
+        },
+        "specification": "GCC",
+        "emirate": "dubai",
+        "driver": {
+          "nationality": "India",
+          "dateOfBirth": {
+            "year": "1995",
+            "month": "June",
+            "day": "15"
+          }
+        },
+        "history": {
+          "drivingExperience": "MORE_THAN_FIVE_YEAR",
+          "claims": "CLAIM_FREE_OVER_4"
+        },
+        "contact": {
+          "email": "qa.testing@example.com"
+        }
+      }
     }
   ],
   "health": []

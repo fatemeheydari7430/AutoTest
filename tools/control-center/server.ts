@@ -484,21 +484,46 @@ async function handleApi(
       try { body = await readJsonBody(req); } catch {
         return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
       }
-      const product = (body as { product?: unknown } | undefined)?.product;
-      const configBody = (body as { config?: unknown } | undefined)?.config;
+      const input = body as { product?: unknown; config?: unknown; scenarios?: unknown } | undefined;
+      const product = input?.product;
       if (product !== 'car' && product !== 'health') {
         return sendJson(res, 400, { ok: false, errors: ['product must be "car" or "health"'] });
       }
-      const errors = product === 'car' ? validateCarConfig(configBody) : validateHealthConfig(configBody);
-      if (errors.length) return sendJson(res, 400, { ok: false, errors });
+
+      const scenarioInputs = Array.isArray(input.scenarios)
+        ? input.scenarios as { name?: unknown; config?: unknown }[]
+        : [{ config: input.config }];
+      if (scenarioInputs.length === 0) {
+        return sendJson(res, 400, { ok: false, errors: ['At least one scenario configuration is required'] });
+      }
+
       const store = readScenarioStore();
       const existingNames = new Set(store[product].map((scenario) => scenario.name));
-      let number = 1;
-      while (existingNames.has(`Scenario ${number}`)) number += 1;
-      const scenario = { name: `Scenario ${number}`, config: configBody };
-      store[product].push(scenario);
+      const added: { name: string; config: unknown }[] = [];
+      let nextNumber = 1;
+      for (const [index, scenarioInput] of scenarioInputs.entries()) {
+        const configBody = scenarioInput?.config;
+        const errors = product === 'car' ? validateCarConfig(configBody) : validateHealthConfig(configBody);
+        if (errors.length) {
+          return sendJson(res, 400, { ok: false, errors: errors.map((error) => `Scenario ${index + 1}: ${error}`) });
+        }
+
+        let name = typeof scenarioInput.name === 'string' ? scenarioInput.name.trim() : '';
+        if (!name) {
+          while (existingNames.has(`Scenario ${nextNumber}`)) nextNumber += 1;
+          name = `Scenario ${nextNumber++}`;
+        }
+        const nameKey = name.toLocaleLowerCase();
+        if ([...existingNames].some((existing) => existing.toLocaleLowerCase() === nameKey)) {
+          return sendJson(res, 409, { ok: false, errors: [`Scenario name already exists: ${name}`] });
+        }
+        existingNames.add(name);
+        added.push({ name, config: configBody });
+      }
+
+      store[product].push(...added);
       writeScenarioStore(store);
-      return sendJson(res, 201, { ok: true, scenario, scenarios: store });
+      return sendJson(res, 201, { ok: true, scenario: added[0], added, scenarios: store });
     }
 
     case 'PUT /api/scenarios': {

@@ -15,8 +15,6 @@
         <p class="subtitle">Configure an E2E run, then run it or open Playwright UI.</p>
       </div>
       <div class="topbar-actions">
-        <button id="run-car-top">Run Car Test</button>
-        <button id="run-health-top">Run Health Test</button>
         <button id="open-ui" class="primary">Open Playwright UI</button>
       </div>
     </header>
@@ -29,24 +27,26 @@
       <button class="tab" data-tab="api">API Tests</button>
     </nav>
 
-    <div class="runbar">
-      <span class="runbar-label">Execution Mode</span>
+    <div id="runbar" class="runbar">
+      <span class="runbar-label">BROWSER MODE</span>
       <label class="radio"><input type="radio" name="execution-mode" value="headless" checked /> Headless</label>
-      <label class="radio"><input type="radio" name="execution-mode" value="headed" /> Open browser during test</label>
-      <button id="stop-test" class="danger" disabled>Stop Test</button>
+      <label class="radio"><input type="radio" name="execution-mode" value="headed" /> Visible browser</label>
     </div>
-
-    <section id="console-section" class="console-section" hidden>
-      <h2 id="console-title">Live Console</h2>
-      <pre id="live-console" class="console"></pre>
-    </section>
 
     <main>
       <section id="panel-car" class="panel active">
+        <header class="car-hero">
+          <div>
+            <span class="car-eyebrow">LOOKINSURE · MOTOR QA</span>
+            <h1>Car insurance test</h1>
+            <p>Configure a vehicle and driver, then run the flow or save it as a reusable scenario.</p>
+          </div>
+          <div class="car-hero-status"><span class="car-live-dot"></span>QA WORKSPACE</div>
+        </header>
 
-
-        <div class="grid">
-          <div class="field">
+        <div class="grid car-lead-row">
+          <div class="field car-lead-field">
+            <label for="car-lead-type">Lead type</label>
             <select id="car-lead-type"></select>
           </div>
         </div>
@@ -122,8 +122,7 @@
         </div>
 
         <div class="actions">
-          <button id="car-reset">Reset Default</button>
-          <button id="car-run">Run Car Test</button>
+          <button id="car-run" class="primary">Run Car Test</button>
           <button id="car-add-form-scenario">Add Current Configuration as Scenario</button>
           <button id="car-json">View / Edit JSON</button>
         </div>
@@ -224,36 +223,32 @@
       </section>
     </main>
 
+    <section id="console-section" class="console-section" hidden>
+      <div class="console-header">
+        <h2 id="console-title">Live Console</h2>
+        <button id="stop-test" class="danger" hidden disabled>Stop Test</button>
+      </div>
+      <pre id="live-console" class="console"></pre>
+    </section>
+
     <div id="json-modal" class="modal" hidden>
       <div class="modal-content">
         <div class="modal-header">
           <h2 id="json-modal-title">Batch Scenarios</h2>
-          <button id="json-close">Close</button>
         </div>
 
-        <h3>Selected Scenario Configuration JSON</h3>
+        <h3>Scenario Configuration JSON</h3>
+        <p class="json-hint">Add one configuration object, an array of configurations, or a <code>scenarios</code> array to add several at once.</p>
         <textarea id="batch-json" class="json-area" spellcheck="false"></textarea>
         <div class="actions">
-          <button id="batch-add-current">Add JSON Configuration as Scenario</button>
+          <button id="batch-add-current" class="primary">Add JSON Scenario(s)</button>
           <button id="batch-format">Format JSON</button>
         </div>
         <div id="batch-errors" class="message error" hidden></div>
         <div id="batch-success" class="message ok" hidden></div>
-
-        <h3>Batch Progress</h3>
-        <div id="batch-progress" class="summary">No batch has been run.</div>
-        <table id="batch-table" class="batch-table" hidden>
-          <thead>
-            <tr>
-              <th>Scenario</th>
-              <th>Status</th>
-              <th>Duration</th>
-              <th>Tracking Code</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="batch-table-body"></tbody>
-        </table>
+        <div class="modal-footer">
+          <button id="json-close">Close</button>
+        </div>
       </div>
     </div>
 

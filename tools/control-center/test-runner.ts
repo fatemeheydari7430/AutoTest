@@ -29,6 +29,7 @@ export interface RunResult {
   summary: RunSummary | null;
   finishedAt: string;
   error: string | null;
+  warning?: string | null;
 }
 
 export interface ScenarioDefinition {
@@ -43,6 +44,7 @@ export interface ScenarioResult {
   duration: number | null;
   trackingCode: string | null;
   error: string | null;
+  warning?: string | null;
 }
 
 export interface BatchResult {
@@ -127,6 +129,7 @@ interface Controller {
   index?: number;
   results?: ScenarioResult[];
   backup?: string | null;
+  warning?: string | null;
 }
 
 let active: Controller | null = null;
@@ -317,6 +320,7 @@ function handleLine(controller: Controller, line: string): void {
         type?: string;
         product?: string;
         value?: unknown;
+        warning?: unknown;
         passed?: unknown;
         failed?: unknown;
         skipped?: unknown;
@@ -337,6 +341,11 @@ function handleLine(controller: Controller, line: string): void {
         const skipped = typeof event.skipped === 'number' ? event.skipped : 0;
         controller.summary = { passed, failed, skipped };
         controller.output.push(`Summary: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+        return;
+      }
+      if (event.type === 'result-warning' && event.warning === 'Empty list' && controller.target === 'car-e2e') {
+        controller.warning = 'Empty list';
+        controller.output.push('Warning: Empty list');
         return;
       }
     } catch {
@@ -365,6 +374,7 @@ function beginChild(controller: Controller): void {
   controller.childStartedAt = Date.now();
   controller.trackingCode = null;
   controller.summary = null;
+  controller.warning = null;
 
   const onData = (chunk: Buffer): void => {
     for (const raw of chunk.toString('utf8').split(/\r?\n/)) {
@@ -395,6 +405,7 @@ function saveRunResult(controller: Controller, status: RunStatus, error: string 
     summary: controller.summary,
     finishedAt: new Date().toISOString(),
     error,
+    warning: controller.warning ?? null,
   });
 }
 
@@ -427,6 +438,7 @@ function onChildClose(controller: Controller, code: number | null, errorMessage:
       duration,
       trackingCode: controller.trackingCode,
       error,
+      warning: controller.warning ?? null,
     };
   }
   saveRunResult(controller, status, error, duration);

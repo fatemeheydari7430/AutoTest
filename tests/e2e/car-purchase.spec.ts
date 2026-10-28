@@ -65,9 +65,19 @@ test.describe(
         await drivingHistoryPage.answerClaims(scenario.history.claims);
       });
 
+      let emptyQuoteList = false;
       await test.step('Load available quotes', async () => {
-        await quotesPage.expectLoaded();
+        emptyQuoteList = await quotesPage.expectLoaded();
       });
+
+      if (emptyQuoteList) {
+        await test.step('Report empty quote list and close browser', async () => {
+          await page.waitForTimeout(2_000);
+          console.log('CONTROL_CENTER_EVENT {"type":"result-warning","warning":"Empty list"}');
+          await page.context().close();
+        });
+        return;
+      }
 
       await test.step('Select insurance quote', async () => {
         await quotesPage.selectFirstQuote();

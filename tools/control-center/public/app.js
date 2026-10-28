@@ -672,17 +672,6 @@ async function saveHealth() {
   showMessage("ok", ["Health settings saved to runtime config."]);
 }
 
-async function resetCar() {
-  const { ok, data } = await request("/api/config/car/reset", "POST");
-  if (!ok) {
-    showMessage("error", ["Car reset failed", ...(data.errors ?? [])]);
-    return;
-  }
-  applyCarConfig(data.config);
-  // $("car-preset").value = "default";
-  showMessage("ok", ["Car config reset to default preset."]);
-}
-
 async function resetHealth() {
   const { ok, data } = await request("/api/config/health/reset", "POST");
   if (!ok) {
@@ -755,12 +744,27 @@ async function saveTestOptions() {
   return request("/api/test-options", "PUT", { execution: { headed: getExecutionHeaded() } });
 }
 
+function mountRunbarForTab(tabName) {
+  const runbar = $("runbar");
+  if (tabName !== "car" && tabName !== "health") {
+    runbar.hidden = true;
+    return;
+  }
+  runbar.hidden = false;
+  const actions = $(`panel-${tabName}`).querySelector(".actions");
+  const runButton = $(`${tabName}-run`);
+  if (actions && runButton) actions.insertBefore(runbar, runButton);
+}
+
 function renderConsole(state) {
   const section = $("console-section");
   const title = $("console-title");
   const pre = $("live-console");
+  const stopButton = $("stop-test");
   const lines = (state.console && state.console.lines) || [];
   const product = (state.console && state.console.product) || null;
+  stopButton.hidden = !state.running;
+  stopButton.disabled = !state.running;
 
   if (!state.running && lines.length === 0) {
     section.hidden = true;
@@ -813,6 +817,7 @@ function rememberBatchScenarioResults(batch) {
       duration: result.duration,
       trackingCode: result.trackingCode,
       error: result.error,
+      warning: result.warning,
       updatedAt: batch.finishedAt || previous?.updatedAt || new Date().toISOString(),
     };
     changed = true;
@@ -849,11 +854,6 @@ function resultRow(label, value) {
 
 function statusLabel(status) {
   const labels = { passed: "Passed", failed: "Failed", stopped: "Stopped", "not-run": "Not Run" };
-  return labels[status] ?? status;
-}
-
-function batchStatusLabel(status) {
-  const labels = { running: "Running", completed: "Completed", stopped: "Stopped", failed: "Failed" };
   return labels[status] ?? status;
 }
 
@@ -908,86 +908,17 @@ function renderResult(product, state) {
   el.appendChild(resultRow("Duration", formatDuration(last.duration)));
   el.appendChild(trackingRow(last.trackingCode));
   if (last.error) el.appendChild(resultRow("Error", last.error));
+  if (last.warning) el.appendChild(resultRow("Warning", last.warning));
 }
 
 function renderBatch(state) {
-  const progress = $("batch-progress");
-  const table = $("batch-table");
-  const body = $("batch-table-body");
-  if (!progress || !table || !body) return;
-
-  const batch = state.batch;
-  latestBatchState = batch;
-  rememberBatchScenarioResults(batch);
-  if (!batch) {
-    progress.textContent = "No batch has been run.";
-    table.hidden = true;
-    body.innerHTML = "";
-    return;
-  }
-
-  progress.textContent =
-    batch.status === "running" && state.currentScenario
-      ? `Running scenario ${state.currentScenario.index} of ${state.currentScenario.total}: ${state.currentScenario.name}`
-      : `Batch ${batchStatusLabel(batch.status)} — ${batch.results.length} scenario(s)`;
-
-  table.hidden = false;
-  body.innerHTML = "";
-  for (const [index, result] of batch.results.entries()) {
-    const tr = document.createElement("tr");
-    tr.className = result.status;
-    const scenarioCell = document.createElement("td");
-    if (result.config) {
-      const view = document.createElement("button");
-      view.type = "button";
-      view.className = "scenario-result-view";
-      view.textContent = result.name;
-      view.dataset.resultViewIndex = String(index);
-      scenarioCell.appendChild(view);
-    } else {
-      scenarioCell.textContent = result.name;
-    }
-    tr.appendChild(scenarioCell);
-    for (const cell of [
-      statusLabel(result.status),
-      result.duration != null ? formatDuration(result.duration) : "—",
-      result.trackingCode || "—",
-    ]) {
-      const td = document.createElement("td");
-      td.textContent = cell;
-      tr.appendChild(td);
-    }
-    const action = document.createElement("td");
-    if (!state.running && batch.status !== "running") {
-      if (result.config) {
-        const run = document.createElement("button");
-        run.type = "button";
-        run.className = "scenario-run primary";
-        run.textContent = "Run";
-        run.dataset.resultRunIndex = String(index);
-        action.appendChild(run);
-      }
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "scenario-remove";
-      remove.textContent = "Remove";
-      remove.setAttribute("aria-label", `Remove previous result for ${result.name}`);
-      remove.dataset.resultIndex = String(body.children.length);
-      action.appendChild(remove);
-    } else {
-      action.textContent = "—";
-    }
-    tr.appendChild(action);
-    body.appendChild(tr);
-  }
+  latestBatchState = state.batch;
+  rememberBatchScenarioResults(state.batch);
 }
 
 const RUN_CONTROL_IDS = [
-  "run-car-top",
-  "run-health-top",
   "car-run",
   "health-run",
-  "car-reset",
   "health-save",
   "health-reset",
   "api-car-happy",
@@ -1258,6 +1189,12 @@ function renderMainScenarios(product) {
         error.textContent = result.error;
         details.appendChild(error);
       }
+      if (result.warning) {
+        const warning = document.createElement("span");
+        warning.className = "scenario-result-warning";
+        warning.textContent = `Warning: ${result.warning}`;
+        details.appendChild(warning);
+      }
       if (result.updatedAt) {
         const updated = document.createElement("span");
         updated.className = "scenario-result-time";
@@ -1343,7 +1280,7 @@ function openJsonModal(product) {
   jsonModalProduct = product;
   $("json-modal-title").textContent = `${product === "car" ? "Car" : "Health"} Batch Scenarios`;
   batchBufferText(product);
-  setEditorValue(configDrafts[product] ?? pretty(configForJsonDraft(product)));
+  setEditorValue(configDrafts[product] ?? pretty([configForJsonDraft(product)]));
   showJsonErrors("batch-errors", []);
   showBatchSuccess();
   $("json-modal").hidden = false;
@@ -1372,27 +1309,57 @@ function formatBatchJson() {
 /** Add the editable JSON configuration to the batch scenario array. */
 async function addCurrentConfigAsScenario() {
   if (!jsonModalProduct) return;
-  let config;
+  let parsed;
   try {
-    config = JSON.parse(editorValue());
+    parsed = JSON.parse(editorValue());
   } catch (error) {
     showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
     return;
   }
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    showJsonErrors("batch-errors", ["Scenario configuration must be a JSON object."]);
+
+  if (parsed?.product && parsed.product !== jsonModalProduct) {
+    showJsonErrors("batch-errors", [`This editor is for ${jsonModalProduct} scenarios, but the JSON product is ${parsed.product}.`]);
     return;
   }
-  const normalizedConfig = normalizeScenarioConfig(jsonModalProduct, config);
-  const { ok, data } = await request(`/api/config/${jsonModalProduct}/validate`, "POST", normalizedConfig);
+
+  const entries = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.scenarios)
+      ? parsed.scenarios
+      : [parsed];
+  if (entries.length === 0) {
+    showJsonErrors("batch-errors", ["Add at least one scenario configuration."]);
+    return;
+  }
+
+  const scenarios = [];
+  for (const [index, entry] of entries.entries()) {
+    const hasWrappedConfig = entry && typeof entry === "object" && !Array.isArray(entry) && "config" in entry;
+    const rawConfig = hasWrappedConfig ? entry.config : entry;
+    if (!rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) {
+      showJsonErrors("batch-errors", [`Scenario ${index + 1} must contain a configuration object.`]);
+      return;
+    }
+    const config = deepClone(rawConfig);
+    const name = hasWrappedConfig && typeof entry.name === "string" ? entry.name : undefined;
+    scenarios.push({ name, config: normalizeScenarioConfig(jsonModalProduct, config) });
+  }
+
+  const { ok, data } = await request("/api/scenarios", "POST", {
+    product: jsonModalProduct,
+    scenarios,
+  });
   if (!ok) {
-    showJsonErrors("batch-errors", ["Current configuration is invalid", ...(data.errors ?? [])]);
+    showJsonErrors("batch-errors", ["Could not add JSON scenarios", ...(data.errors ?? [])]);
     return;
   }
-  const scenarioName = await pushScenario(jsonModalProduct, normalizedConfig);
-  if (!scenarioName) return;
+  savedScenarios.car = data.scenarios.car;
+  savedScenarios.health = data.scenarios.health;
+  renderMainScenarios("car");
+  renderMainScenarios("health");
   showJsonErrors("batch-errors", []);
-  showBatchSuccess(`${scenarioName} added to the scenario list.`);
+  const count = data.added?.length ?? scenarios.length;
+  showBatchSuccess(`${count} JSON scenario${count === 1 ? "" : "s"} added to the scenario list.`);
 }
 
 async function pushScenario(product, config) {
@@ -1730,6 +1697,8 @@ async function startRun(target) {
 }
 
 function wireEvents() {
+  mountRunbarForTab(document.querySelector(".tab.active")?.dataset.tab ?? "car");
+
   for (const id of ["car-brand", "car-model", "car-year", "car-trim", "car-nationality"]) {
     $(id).addEventListener("click", (event) => {
       try {
@@ -1747,6 +1716,7 @@ function wireEvents() {
       for (const panel of document.querySelectorAll(".panel")) panel.classList.remove("active");
       tab.classList.add("active");
       $(`panel-${tab.dataset.tab}`).classList.add("active");
+      mountRunbarForTab(tab.dataset.tab);
     });
   }
 
@@ -1807,7 +1777,6 @@ function wireEvents() {
   $("panel-health").addEventListener("input", updateHealthSummary);
   $("panel-health").addEventListener("change", updateHealthSummary);
 
-  $("car-reset").addEventListener("click", resetCar);
   $("health-save").addEventListener("click", saveHealth);
   $("health-reset").addEventListener("click", resetHealth);
   $("car-add-form-scenario").addEventListener("click", () => addFormAsScenario("car"));
@@ -1815,8 +1784,6 @@ function wireEvents() {
   $("open-ui").addEventListener("click", openUi);
   $("car-run").addEventListener("click", () => startRun("car-e2e"));
   $("health-run").addEventListener("click", () => startRun("health-e2e"));
-  $("run-car-top").addEventListener("click", () => startRun("car-e2e"));
-  $("run-health-top").addEventListener("click", () => startRun("health-e2e"));
   $("api-car-happy").addEventListener("click", () => startRun("car-api-happy"));
   $("api-car-negative").addEventListener("click", () => startRun("car-api-negative"));
   $("api-health-happy").addEventListener("click", () => startRun("health-api-happy"));
@@ -1851,21 +1818,6 @@ function wireEvents() {
   $("json-close").addEventListener("click", closeJsonModal);
   $("batch-format").addEventListener("click", formatBatchJson);
   $("batch-add-current").addEventListener("click", addCurrentConfigAsScenario);
-  $("batch-table-body").addEventListener("click", (event) => {
-    const run = event.target.closest("button[data-result-run-index]");
-    if (run && latestBatchState?.results?.[Number(run.dataset.resultRunIndex)]?.config) {
-      const result = latestBatchState.results[Number(run.dataset.resultRunIndex)];
-      void runScenarioDefinition(latestBatchState.product, { name: result.name, config: result.config });
-      return;
-    }
-    const view = event.target.closest("button[data-result-view-index]");
-    if (view) {
-      showBatchResultConfig(Number(view.dataset.resultViewIndex));
-      return;
-    }
-    const button = event.target.closest("button[data-result-index]");
-    if (button) void removePreviousBatchResult(Number(button.dataset.resultIndex));
-  });
 }
 
 async function init() {
