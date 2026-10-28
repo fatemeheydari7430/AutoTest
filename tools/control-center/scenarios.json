@@ -1,0 +1,34 @@
+{
+  "car": [
+    {
+      "name": "Scenario 1",
+      "config": {
+        "leadType": "RENEW",
+        "vehicle": {
+          "brand": "Nissan",
+          "model": "SUNNY",
+          "year": "2024",
+          "trim": "SV-1.6 L-CVT-5gear-118 HP"
+        },
+        "specification": "GCC",
+        "emirate": "abuDhabi",
+        "driver": {
+          "nationality": "Pakistan",
+          "dateOfBirth": {
+            "year": "1993",
+            "month": "January",
+            "day": "7"
+          }
+        },
+        "history": {
+          "drivingExperience": "MORE_THAN_TWO_YEAR",
+          "claims": "CLAIM_2"
+        },
+        "contact": {
+          "email": "test@example.com"
+        }
+      }
+    }
+  ],
+  "health": []
+}

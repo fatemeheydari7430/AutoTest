@@ -83,7 +83,7 @@ test.describe(
       });
 
       await test.step('Wait on payment gateway and close browser', async () => {
-        await gatewayPage.waitForTimeout(5_000);
+        await gatewayPage.waitForTimeout(2_000);
         await page.context().close();
       });
     });

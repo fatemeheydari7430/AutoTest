@@ -3,6 +3,14 @@ const $ = (id) => document.getElementById(id);
 let options = null;
 let carPresets = {};
 let healthPresets = {};
+let liveCarMakes = null;
+let liveCarCountries = null;
+const liveCarModels = new Map();
+let carCatalogLoading = null;
+let carTrimRequestId = 0;
+let carCountrySearchTimer = null;
+let carClaimsRequestId = 0;
+let carClaimsLoading = null;
 
 function showMessage(kind, lines) {
   const box = $("message");
@@ -40,14 +48,210 @@ function setSelect(el, map, value) {
   if (value !== undefined) el.value = value;
 }
 
-function fillDatalist(id, values) {
-  const list = $(id);
+function setDropdown(select, values, selected, { allowBlank = false, preserveSelection = false } = {}) {
+  const choices = [...new Set(values.filter((value) => value != null && String(value) !== "").map(String))];
+  if (preserveSelection && selected && !choices.includes(String(selected))) {
+    choices.unshift(String(selected));
+  }
+
+  select.innerHTML = "";
+  if (allowBlank) {
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "— No trim —";
+    select.appendChild(blank);
+  }
+  for (const value of choices) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  }
+  if (selected !== undefined && selected !== null && [...select.options].some((option) => option.value === String(selected))) {
+    select.value = String(selected);
+  }
+}
+
+function setDatalist(input, values, selected, { preserveSelection = false } = {}) {
+  const list = $(input.getAttribute("list"));
+  const choices = unique(values);
+  if (preserveSelection && selected && !choices.includes(String(selected))) {
+    choices.unshift(String(selected));
+  }
   list.innerHTML = "";
-  for (const value of values) {
+  for (const value of choices) {
     const option = document.createElement("option");
     option.value = value;
     list.appendChild(option);
   }
+  if (selected !== undefined && selected !== null) input.value = String(selected);
+}
+
+function carVehicles() {
+  return Object.values(carPresets).map((preset) => preset.vehicle);
+}
+
+function carMakeOptions() {
+  return liveCarMakes?.map((make) => make.make)
+    ?? gather(carPresets, (preset) => preset.vehicle.brand);
+}
+
+function carMakeId(makeName) {
+  return liveCarMakes?.find((make) => make.make === makeName)?.id;
+}
+
+function carCountryOptions() {
+  return liveCarCountries?.length
+    ? liveCarCountries.map((country) => country.name)
+    : gather(carPresets, (preset) => preset.driver.nationality);
+}
+
+function presetModels(makeName) {
+  return unique(carVehicles().filter((vehicle) => vehicle.brand === makeName).map((vehicle) => vehicle.model));
+}
+
+function carModelOptions(makeName) {
+  return liveCarModels.get(makeName) ?? presetModels(makeName);
+}
+
+function unique(values) {
+  return [...new Set(values.filter((value) => value != null && String(value) !== "").map(String))];
+}
+
+function updateCarVehicleDropdowns({ preserveModel = false, preserveYear = false, preserveTrim = false } = {}) {
+  const vehicles = carVehicles();
+  const brand = $("car-brand").value;
+  const modelInput = $("car-model");
+  const previousModel = modelInput.value;
+  const models = carModelOptions(brand);
+  const model = preserveModel && models.includes(previousModel) ? previousModel : (models.includes(previousModel) ? previousModel : "");
+  setDatalist(modelInput, models, model, { preserveSelection: true });
+
+  const yearInput = $("car-year");
+  const previousYear = yearInput.value;
+  const years = yearValues();
+  const year = preserveYear || years.includes(previousYear) ? previousYear : years[0];
+  setDatalist(yearInput, years, year, { preserveSelection: true });
+
+  const trimInput = $("car-trim");
+  const previousTrim = trimInput.value;
+  const presetTrims = unique(vehicles
+    .filter((vehicle) => vehicle.brand === brand && vehicle.model === model && String(vehicle.year) === year)
+    .map((vehicle) => vehicle.trim));
+  const trim = preserveTrim && presetTrims.includes(previousTrim)
+    ? previousTrim
+    : (presetTrims.includes(previousTrim) ? previousTrim : "");
+  if (liveCarMakes !== null) {
+    setDatalist(trimInput, [], "");
+    trimInput.disabled = true;
+    trimInput.placeholder = "Select make, model and year first";
+  } else {
+    setDatalist(trimInput, presetTrims, trim, { preserveSelection: preserveTrim });
+    trimInput.disabled = presetTrims.length === 0;
+    trimInput.placeholder = presetTrims.length ? "" : "No trim available";
+  }
+}
+
+async function loadLiveCarModels(makeName, preferredModel = "") {
+  const makeId = carMakeId(makeName);
+  if (makeId == null) return;
+  const { ok, data } = await request(`/api/car-catalog/models?make=${encodeURIComponent(makeId)}`, "GET");
+  if (!ok || !Array.isArray(data.options)) {
+    throw new Error(data.errors?.[0] ?? `Could not load models for ${makeName}`);
+  }
+  const models = unique(data.options);
+  liveCarModels.set(makeName, models);
+  const modelInput = $("car-model");
+  const selected = models.includes(preferredModel) ? preferredModel : "";
+  setDatalist(modelInput, models, selected, { preserveSelection: true });
+  await loadLiveCarTrims();
+}
+
+async function loadLiveCarTrims() {
+  const requestId = ++carTrimRequestId;
+  const trimInput = $("car-trim");
+  const makeName = $("car-brand").value;
+  const makeId = carMakeId(makeName);
+  const model = $("car-model").value;
+  const year = $("car-year").value;
+  if (makeId == null || !model || !year) {
+    setDatalist(trimInput, [], "");
+    trimInput.disabled = true;
+    trimInput.placeholder = "Select make, model and year first";
+    return;
+  }
+
+  const previousTrim = trimInput.value;
+  trimInput.disabled = true;
+  trimInput.placeholder = "Loading trims…";
+
+  const query = new URLSearchParams({ make: String(makeId), model, year });
+  let response;
+  try {
+    response = await request(`/api/car-catalog/trims?${query}`, "GET");
+  } catch {
+    response = { ok: false, data: { options: [] } };
+  }
+  if (requestId !== carTrimRequestId) return;
+  const trims = response.ok && Array.isArray(response.data.options)
+    ? unique(response.data.options)
+    : [];
+  if (trims.length === 0) {
+    setDatalist(trimInput, [], "");
+    trimInput.disabled = true;
+    trimInput.placeholder = "No trim available for this vehicle";
+    return;
+  }
+  const selected = trims.includes(previousTrim) ? previousTrim : "";
+  setDatalist(trimInput, trims, selected, { preserveSelection: true });
+  trimInput.disabled = false;
+  trimInput.placeholder = "";
+}
+
+async function loadLiveCarCatalog() {
+  if (carCatalogLoading) return carCatalogLoading;
+  if (liveCarMakes !== null) return;
+
+  carCatalogLoading = (async () => {
+    const status = $("car-catalog-status");
+    status.textContent = "Loading vehicle options from the catalog…";
+    try {
+      const { ok, data } = await request("/api/car-catalog/makes?searchTerm=", "GET");
+      if (!ok || !Array.isArray(data.options)) {
+        throw new Error(data.errors?.[0] ?? "Could not load vehicle makes");
+      }
+      liveCarMakes = data.options
+        .filter((make) => make && typeof make.make === "string" && make.id != null)
+        .map((make) => ({ id: make.id, make: make.make }));
+      if (liveCarMakes.length === 0) {
+        liveCarMakes = null;
+        throw new Error("The live catalog returned no makes");
+      }
+      const currentMake = $("car-brand").value;
+      setDatalist($("car-brand"), carMakeOptions(), currentMake, { preserveSelection: true });
+      try {
+        const countriesResponse = await request("/api/car-catalog/countries", "GET");
+        if (!countriesResponse.ok || !Array.isArray(countriesResponse.data.options)) {
+          throw new Error(countriesResponse.data.errors?.[0] ?? "Could not load countries");
+        }
+        liveCarCountries = countriesResponse.data.options
+          .filter((country) => country && typeof country.name === "string")
+          .map((country) => ({ id: country.id, name: country.name }));
+        setDatalist($("car-nationality"), carCountryOptions(), $("car-nationality").value, { preserveSelection: true });
+      } catch (error) {
+        status.textContent = `Live vehicle catalog loaded, but countries could not be loaded: ${String(error)}`;
+      }
+      if (!status.textContent.includes("could not be loaded")) {
+        status.textContent = `Loaded ${liveCarMakes.length} makes and ${liveCarCountries?.length ?? 0} countries from the live site APIs. Some other choices are fixed by the site flow.`;
+      }
+      if (carMakeId(currentMake)) await loadLiveCarModels(currentMake, $("car-model").value);
+    } catch (error) {
+      status.textContent = `Live vehicle options unavailable; showing saved scenario options. ${String(error)}`;
+    } finally {
+      carCatalogLoading = null;
+    }
+  })();
+  return carCatalogLoading;
 }
 
 function gather(presets, pick) {
@@ -280,22 +484,17 @@ function populateOptions() {
 
   fillDob("car", car.months);
 
-  // Seed from presets so saved values render before the real API responds;
-  // these lists are replaced by live lookups when the fields are used.
-  fillDatalist("car-brands", gather(carPresets, (p) => p.vehicle.brand));
-  fillDatalist("car-models", gather(carPresets, (p) => p.vehicle.model));
-  fillDatalist("car-years", yearValues());
-  fillDatalist("car-trims", gather(carPresets, (p) => p.vehicle.trim));
-  fillDatalist("car-nationalities", gather(carPresets, (p) => p.driver.nationality));
+  setDatalist($("car-brand"), carMakeOptions());
+  setDatalist($("car-nationality"), carCountryOptions());
 
-  const carPresetSelect = $("car-preset");
-  carPresetSelect.innerHTML = "";
-  for (const name of Object.keys(carPresets)) {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    carPresetSelect.appendChild(option);
-  }
+  // const carPresetSelect = $("car-preset");
+  // carPresetSelect.innerHTML = "";
+  // for (const name of Object.keys(carPresets)) {
+  //   const option = document.createElement("option");
+  //   option.value = name;
+  //   option.textContent = name;
+  //   carPresetSelect.appendChild(option);
+  // }
 
   const healthPresetSelect = $("health-preset");
   healthPresetSelect.innerHTML = "";
@@ -308,19 +507,48 @@ function populateOptions() {
 }
 
 function applyCarConfig(config) {
+  const nationalityValue = config.driver?.nationality ?? config.driver?.country ?? "";
+  const nationality = typeof nationalityValue === "string" ? nationalityValue.trim() : "";
   $("car-lead-type").value = config.leadType;
-  $("car-brand").value = config.vehicle.brand;
-  $("car-model").value = config.vehicle.model;
-  $("car-year").value = config.vehicle.year;
-  $("car-trim").value = config.vehicle.trim ?? "";
+  setDatalist(
+    $("car-brand"),
+    carMakeOptions(),
+    config.vehicle.brand,
+    { preserveSelection: true },
+  );
+  updateCarVehicleDropdowns({ preserveModel: true, preserveYear: true, preserveTrim: true });
+  setDatalist(
+    $("car-model"),
+    carModelOptions(config.vehicle.brand),
+    config.vehicle.model,
+    { preserveSelection: true },
+  );
+  setDatalist($("car-year"), yearValues(), config.vehicle.year, { preserveSelection: true });
+  const trims = unique(carVehicles()
+    .filter((vehicle) => vehicle.brand === config.vehicle.brand
+      && vehicle.model === config.vehicle.model
+      && String(vehicle.year) === String(config.vehicle.year))
+    .map((vehicle) => vehicle.trim));
+  setDatalist($("car-trim"), trims, config.vehicle.trim ?? "", {
+    preserveSelection: true,
+  });
   $("car-specification").value = config.specification;
   $("car-emirate").value = config.emirate;
-  $("car-nationality").value = config.driver.nationality;
+  setDatalist(
+    $("car-nationality"),
+    carCountryOptions(),
+    nationality,
+    { preserveSelection: true },
+  );
+  // Keep the scenario's selected country even when it is temporarily absent
+  // from the asynchronously loaded country datalist.
+  $("car-nationality").value = nationality;
   setDob("car", config.driver.dateOfBirth);
   $("car-experience").value = config.history.drivingExperience;
   $("car-claims").value = config.history.claims;
   $("car-email").value = config.contact.email;
   updateCarSummary();
+  void loadLiveCarClaims(config.history.drivingExperience, config.history.claims);
 }
 
 function collectCarConfig() {
@@ -394,23 +622,35 @@ async function request(url, method, body) {
   return { ok: response.ok && data.ok !== false, data };
 }
 
-async function saveCar() {
-  const { ok, data } = await request("/api/config/car", "PUT", collectCarConfig());
-  if (!ok) {
-    showMessage("error", ["Car settings not saved", ...(data.errors ?? [])]);
-    return;
-  }
-  applyCarConfig(data.config);
-  const testOptions = await saveTestOptions();
-  if (!testOptions.ok) {
-    showMessage("error", [
-      "Car settings saved, but execution mode was not saved",
-      ...(testOptions.data.errors ?? []),
-    ]);
-    return;
-  }
-  $("car-source").textContent = "Active source: runtime";
-  showMessage("ok", ["Car settings saved to runtime config."]);
+async function loadLiveCarClaims(drivingExperience, preferredClaim = "") {
+  const requestId = ++carClaimsRequestId;
+  const claims = $("car-claims");
+  const status = $("car-claims-status");
+  claims.disabled = true;
+  status.textContent = "Loading claim options…";
+  carClaimsLoading = (async () => {
+    try {
+      const query = new URLSearchParams({ drivingExperience });
+      const { ok, data } = await request(`/api/car-catalog/claims?${query}`, "GET");
+      if (!ok || !data.options || typeof data.options !== "object") {
+        throw new Error(data.errors?.[0] ?? "Could not load claim options");
+      }
+      if (requestId !== carClaimsRequestId) return false;
+      const selected = Object.hasOwn(data.options, preferredClaim)
+        ? preferredClaim
+        : Object.keys(data.options)[0];
+      setSelect(claims, data.options, selected);
+      claims.disabled = Object.keys(data.options).length === 0;
+      status.textContent = `Options based on driving experience (up to ${data.maxNoClaimDiscountYears} claim-free years).`;
+      return !claims.disabled;
+    } catch (error) {
+      if (requestId !== carClaimsRequestId) return false;
+      claims.disabled = true;
+      status.textContent = `Could not load claim options: ${String(error)}`;
+      return false;
+    }
+  })();
+  return carClaimsLoading;
 }
 
 async function saveHealth() {
@@ -439,9 +679,7 @@ async function resetCar() {
     return;
   }
   applyCarConfig(data.config);
-  configBuffers.car = null;
-  $("car-preset").value = "default";
-  $("car-source").textContent = "Active source: runtime";
+  // $("car-preset").value = "default";
   showMessage("ok", ["Car config reset to default preset."]);
 }
 
@@ -452,7 +690,6 @@ async function resetHealth() {
     return;
   }
   applyHealthConfig(data.config);
-  configBuffers.health = null;
   $("health-preset").value = "default";
   $("health-source").textContent = "Active source: runtime";
   showMessage("ok", ["Health config reset to default preset."]);
@@ -546,6 +783,48 @@ function renderConsole(state) {
 }
 
 let runPoll = null;
+let latestBatchState = null;
+let latestCurrentScenario = null;
+const SCENARIO_RESULTS_STORAGE_KEY = "lookinsure-control-center-scenario-results";
+
+function scenarioResultKey(product, scenario) {
+  return `${product}:${JSON.stringify(scenario.config)}`;
+}
+
+function readScenarioResults() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SCENARIO_RESULTS_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberBatchScenarioResults(batch) {
+  if (!batch?.product || !Array.isArray(batch.results)) return;
+  const results = readScenarioResults();
+  let changed = false;
+  for (const result of batch.results) {
+    if (!result?.config || !["passed", "failed", "stopped"].includes(result.status)) continue;
+    const key = scenarioResultKey(batch.product, { config: result.config });
+    const previous = results[key];
+    results[key] = {
+      status: result.status,
+      duration: result.duration,
+      trackingCode: result.trackingCode,
+      error: result.error,
+      updatedAt: batch.finishedAt || previous?.updatedAt || new Date().toISOString(),
+    };
+    changed = true;
+  }
+  if (changed) {
+    try {
+      localStorage.setItem(SCENARIO_RESULTS_STORAGE_KEY, JSON.stringify(results));
+    } catch {
+      // Keep the current page usable when browser storage is unavailable.
+    }
+  }
+}
 
 function formatDuration(ms) {
   const total = Math.max(0, Math.round(ms / 1000));
@@ -638,6 +917,8 @@ function renderBatch(state) {
   if (!progress || !table || !body) return;
 
   const batch = state.batch;
+  latestBatchState = batch;
+  rememberBatchScenarioResults(batch);
   if (!batch) {
     progress.textContent = "No batch has been run.";
     table.hidden = true;
@@ -652,20 +933,51 @@ function renderBatch(state) {
 
   table.hidden = false;
   body.innerHTML = "";
-  for (const result of batch.results) {
+  for (const [index, result] of batch.results.entries()) {
     const tr = document.createElement("tr");
     tr.className = result.status;
-    const cells = [
-      result.name,
+    const scenarioCell = document.createElement("td");
+    if (result.config) {
+      const view = document.createElement("button");
+      view.type = "button";
+      view.className = "scenario-result-view";
+      view.textContent = result.name;
+      view.dataset.resultViewIndex = String(index);
+      scenarioCell.appendChild(view);
+    } else {
+      scenarioCell.textContent = result.name;
+    }
+    tr.appendChild(scenarioCell);
+    for (const cell of [
       statusLabel(result.status),
       result.duration != null ? formatDuration(result.duration) : "—",
       result.trackingCode || "—",
-    ];
-    for (const cell of cells) {
+    ]) {
       const td = document.createElement("td");
       td.textContent = cell;
       tr.appendChild(td);
     }
+    const action = document.createElement("td");
+    if (!state.running && batch.status !== "running") {
+      if (result.config) {
+        const run = document.createElement("button");
+        run.type = "button";
+        run.className = "scenario-run primary";
+        run.textContent = "Run";
+        run.dataset.resultRunIndex = String(index);
+        action.appendChild(run);
+      }
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "scenario-remove";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove previous result for ${result.name}`);
+      remove.dataset.resultIndex = String(body.children.length);
+      action.appendChild(remove);
+    } else {
+      action.textContent = "—";
+    }
+    tr.appendChild(action);
     body.appendChild(tr);
   }
 }
@@ -675,7 +987,6 @@ const RUN_CONTROL_IDS = [
   "run-health-top",
   "car-run",
   "health-run",
-  "car-save",
   "car-reset",
   "health-save",
   "health-reset",
@@ -683,6 +994,8 @@ const RUN_CONTROL_IDS = [
   "api-car-negative",
   "api-health-happy",
   "api-health-negative",
+  "car-run-all-scenarios",
+  "health-run-all-scenarios",
 ];
 
 function setRunButtonsDisabled(disabled) {
@@ -693,6 +1006,9 @@ function setRunButtonsDisabled(disabled) {
   for (const radio of document.querySelectorAll('input[name="execution-mode"]')) {
     radio.disabled = disabled;
   }
+  for (const button of document.querySelectorAll(".scenario-run")) {
+    button.disabled = disabled;
+  }
 }
 
 async function refreshRunStatus() {
@@ -702,7 +1018,10 @@ async function refreshRunStatus() {
     renderResult("health", data);
     renderApiResult(data);
     renderConsole(data);
+    latestCurrentScenario = data.currentScenario;
     renderBatch(data);
+    renderMainScenarios("car");
+    renderMainScenarios("health");
     setRunButtonsDisabled(data.running);
     $("stop-test").disabled = !data.running;
     if (!data.running && runPoll) {
@@ -725,16 +1044,27 @@ async function stopCurrentRun() {
   await refreshRunStatus();
 }
 
+async function removePreviousBatchResult(index) {
+  const { ok, data } = await request("/api/batch/results/remove", "POST", { index });
+  if (!ok) {
+    showMessage("error", [data.errors?.[0] ?? "Could not remove previous scenario"]);
+    return;
+  }
+  showMessage("ok", ["Previous scenario result removed."]);
+  await refreshRunStatus();
+}
+
 // ---- JSON editor + batch scenarios ----
 
 let jsonModalProduct = null;
 let activeEditorProduct = null;
-const configBuffers = { car: null, health: null };
 const batchBuffers = { car: null, health: null };
-const editors = { config: null, batch: null };
+const configDrafts = { car: null, health: null };
+const savedScenarios = { car: [], health: [] };
+const editors = { batch: null };
 
 function initEditors() {
-  if (editors.config || typeof CodeMirror === "undefined") return;
+  if (editors.batch || typeof CodeMirror === "undefined") return;
   const common = {
     mode: { name: "javascript", json: true },
     lineNumbers: true,
@@ -744,55 +1074,233 @@ function initEditors() {
     indentUnit: 2,
     tabSize: 2,
   };
-  editors.config = CodeMirror.fromTextArea($("config-json"), common);
   editors.batch = CodeMirror.fromTextArea($("batch-json"), common);
+  editors.batch.on("change", () => {
+    if (activeEditorProduct) renderScenarioList(activeEditorProduct);
+  });
 }
 
-function editorValue(which) {
-  if (editors[which]) return editors[which].getValue();
-  return $(which === "config" ? "config-json" : "batch-json").value;
+function editorValue() {
+  if (editors.batch) return editors.batch.getValue();
+  return $("batch-json").value;
 }
 
-function setEditorValue(which, value) {
-  if (editors[which]) editors[which].setValue(value);
-  else $(which === "config" ? "config-json" : "batch-json").value = value;
+function setEditorValue(value) {
+  if (editors.batch) editors.batch.setValue(value);
+  else $("batch-json").value = value;
 }
 
 function refreshEditors() {
-  if (editors.config) editors.config.refresh();
   if (editors.batch) editors.batch.refresh();
 }
 
-function configBufferText(product) {
-  return configBuffers[product] != null ? configBuffers[product] : pretty(currentConfig(product));
-}
-
 function batchBufferText(product) {
+  if (batchBuffers[product] == null) {
+    try {
+      batchBuffers[product] = localStorage.getItem(`control-center-batch-${product}`);
+    } catch {
+      // Continue with an empty scenario list when browser storage is unavailable.
+    }
+  }
   return batchBuffers[product] != null ? batchBuffers[product] : pretty({ product, scenarios: [] });
 }
 
 function readBatchBuffer(product) {
   try {
-    return JSON.parse(batchBufferText(product));
+    const batch = JSON.parse(batchBufferText(product));
+    return batch && typeof batch === "object" && !Array.isArray(batch) ? batch : null;
   } catch {
-    return { product, scenarios: [] };
+    return null;
   }
 }
 
 function writeBatchBuffer(product, batch) {
   batchBuffers[product] = pretty(batch);
-  if (activeEditorProduct === product && editors.batch) {
-    editors.batch.setValue(batchBuffers[product]);
+  try {
+    localStorage.setItem(`control-center-batch-${product}`, batchBuffers[product]);
+  } catch {
+    // The current session still works even when browser storage is unavailable.
   }
+  renderScenarioList(product);
+}
+
+function renderScenarioList(product) {
+  const list = $("batch-scenario-list");
+  const count = $("batch-scenario-count");
+  if (!list || !count || activeEditorProduct !== product) return;
+
+  list.innerHTML = "";
+  const batch = readBatchBuffer(product);
+  if (!batch || !Array.isArray(batch.scenarios)) {
+    count.textContent = "Fix the Batch Scenarios JSON to view its scenarios.";
+    return;
+  }
+
+  count.textContent = batch.scenarios.length === 1
+    ? "1 scenario"
+    : `${batch.scenarios.length} scenarios`;
+  if (batch.scenarios.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "source";
+    empty.textContent = "No scenarios added.";
+    list.appendChild(empty);
+    return;
+  }
+
+  batch.scenarios.forEach((scenario, index) => {
+    const row = document.createElement("div");
+    row.className = "scenario-row";
+    const name = document.createElement("span");
+    name.className = "scenario-name";
+    name.textContent = typeof scenario?.name === "string" && scenario.name.trim()
+      ? scenario.name
+      : `Scenario ${index + 1}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "scenario-remove";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${name.textContent}`);
+    remove.dataset.scenarioIndex = String(index);
+    const view = document.createElement("button");
+    view.type = "button";
+    view.className = "scenario-view";
+    view.textContent = name.textContent;
+    view.dataset.viewScenarioIndex = String(index);
+    const run = document.createElement("button");
+    run.type = "button";
+    run.className = "scenario-run primary";
+    run.textContent = "Run";
+    run.dataset.runScenarioIndex = String(index);
+    row.append(view, run, remove);
+    list.appendChild(row);
+  });
+}
+
+function renderMainScenarios(product) {
+  const list = $(`${product}-scenario-list`);
+  const count = $(`${product}-scenario-count`);
+  if (!list || !count) return;
+  const scenarios = savedScenarios[product];
+  count.textContent = `${scenarios.length} scenario(s) saved in tools/control-center/scenarios.json`;
+  list.innerHTML = "";
+  scenarios.forEach((scenario, index) => {
+    const row = document.createElement("div");
+    row.className = "scenario-row";
+    const controls = document.createElement("div");
+    controls.className = "scenario-row-main";
+    const view = document.createElement("button");
+    view.type = "button";
+    view.className = "scenario-view";
+    view.textContent = scenario.name || `Scenario ${index + 1}`;
+    view.dataset.mainScenarioView = String(index);
+    const run = document.createElement("button");
+    run.type = "button";
+    run.className = "scenario-run primary";
+    run.textContent = "Run";
+    run.dataset.mainScenarioRun = String(index);
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.textContent = "Rename";
+    rename.dataset.mainScenarioRename = String(index);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "scenario-remove";
+    remove.textContent = "Delete";
+    remove.dataset.mainScenarioDelete = String(index);
+    controls.append(view, run, rename, remove);
+    row.appendChild(controls);
+
+    const key = scenarioResultKey(product, scenario);
+    const storedResult = readScenarioResults()[key];
+    const currentResult = latestBatchState?.product === product
+      ? latestBatchState.results?.find((result) => result.name === scenario.name
+          && JSON.stringify(result.config) === JSON.stringify(scenario.config)
+          && ["passed", "failed", "stopped"].includes(result.status))
+      : null;
+    const isRunning = latestBatchState?.status === "running"
+      && latestCurrentScenario?.name === scenario.name
+      && latestBatchState.product === product;
+    const result = currentResult ?? storedResult;
+    const details = document.createElement("div");
+    details.className = `scenario-result${result ? ` ${result.status}` : isRunning ? " running" : " empty"}`;
+    if (isRunning) {
+      const badge = document.createElement("span");
+      badge.className = "scenario-result-status";
+      badge.textContent = "Running";
+      details.appendChild(badge);
+    } else if (result) {
+      const badge = document.createElement("span");
+      badge.className = "scenario-result-status";
+      badge.textContent = statusLabel(result.status);
+      details.appendChild(badge);
+
+      const duration = document.createElement("span");
+      duration.className = "scenario-result-meta";
+      duration.textContent = `Duration: ${result.duration != null ? formatDuration(result.duration) : "—"}`;
+      details.appendChild(duration);
+
+      if (result.trackingCode) {
+        const tracking = document.createElement("span");
+        tracking.className = "scenario-tracking-code";
+        tracking.textContent = `Tracking Code: ${result.trackingCode}`;
+        details.appendChild(tracking);
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "scenario-result-copy";
+        copy.textContent = "Copy";
+        copy.dataset.copyTrackingCode = result.trackingCode;
+        copy.setAttribute("aria-label", `Copy tracking code for ${scenario.name}`);
+        details.appendChild(copy);
+      }
+      if (result.error) {
+        const error = document.createElement("span");
+        error.className = "scenario-result-error";
+        error.textContent = result.error;
+        details.appendChild(error);
+      }
+      if (result.updatedAt) {
+        const updated = document.createElement("span");
+        updated.className = "scenario-result-time";
+        updated.textContent = `Last run: ${new Date(result.updatedAt).toLocaleString()}`;
+        details.appendChild(updated);
+      }
+    } else {
+      details.textContent = "No run result yet";
+    }
+    row.appendChild(details);
+    list.appendChild(row);
+  });
+}
+
+async function loadSavedScenarios() {
+  const { ok, data } = await request("/api/scenarios", "GET");
+  if (!ok) throw new Error(data.errors?.[0] ?? "Could not load saved scenarios");
+  savedScenarios.car = Array.isArray(data.scenarios?.car) ? data.scenarios.car : [];
+  savedScenarios.health = Array.isArray(data.scenarios?.health) ? data.scenarios.health : [];
+  renderMainScenarios("car");
+  renderMainScenarios("health");
 }
 
 function currentConfig(product) {
   return product === "car" ? collectCarConfig() : collectHealthConfig();
 }
 
-function applyConfigToForm(product, config) {
-  if (product === "car") applyCarConfig(config);
-  else applyHealthConfig(config);
+function configForJsonDraft(product) {
+  const config = deepClone(currentConfig(product));
+  if (product === "car") {
+    config.history.claims = options.car.claims[config.history.claims] ?? config.history.claims;
+  }
+  return config;
+}
+
+function normalizeScenarioConfig(product, config) {
+  const normalized = deepClone(config);
+  if (product === "car" && typeof normalized.history?.claims === "string") {
+    const claimEntry = Object.entries(options.car.claims).find(([key, label]) =>
+      key === normalized.history.claims || label.toLowerCase() === normalized.history.claims.trim().toLowerCase());
+    if (claimEntry) normalized.history.claims = claimEntry[0];
+  }
+  return normalized;
 }
 
 function pretty(value) {
@@ -801,6 +1309,7 @@ function pretty(value) {
 
 function showJsonErrors(containerId, lines) {
   const box = $(containerId);
+  if (containerId === "batch-errors" && lines && lines.length > 0) showBatchSuccess();
   if (!lines || lines.length === 0) {
     box.hidden = true;
     box.innerHTML = "";
@@ -820,134 +1329,262 @@ function showJsonErrors(containerId, lines) {
   }
 }
 
+function showBatchSuccess(message = "") {
+  const box = $("batch-success");
+  box.textContent = message;
+  box.hidden = !message;
+}
+
 function openJsonModal(product) {
-  // Preserve unsaved buffers when switching between products.
-  if (activeEditorProduct && activeEditorProduct !== product) {
-    configBuffers[activeEditorProduct] = editorValue("config");
-    batchBuffers[activeEditorProduct] = editorValue("batch");
+  if (activeEditorProduct && activeEditorProduct !== product && editors.batch) {
+    configDrafts[activeEditorProduct] = editorValue();
   }
   activeEditorProduct = product;
   jsonModalProduct = product;
-  $("json-modal-title").textContent = `${product === "car" ? "Car" : "Health"} Configuration JSON`;
-  setEditorValue("config", configBufferText(product));
-  setEditorValue("batch", batchBufferText(product));
-  showJsonErrors("json-errors", []);
+  $("json-modal-title").textContent = `${product === "car" ? "Car" : "Health"} Batch Scenarios`;
+  batchBufferText(product);
+  setEditorValue(configDrafts[product] ?? pretty(configForJsonDraft(product)));
   showJsonErrors("batch-errors", []);
+  showBatchSuccess();
   $("json-modal").hidden = false;
   refreshEditors();
+  renderScenarioList(product);
   refreshRunStatus();
 }
 
 function closeJsonModal() {
   if (activeEditorProduct) {
-    configBuffers[activeEditorProduct] = editorValue("config");
-    batchBuffers[activeEditorProduct] = editorValue("batch");
+    configDrafts[activeEditorProduct] = editorValue();
   }
   $("json-modal").hidden = true;
   jsonModalProduct = null;
 }
 
-function reloadConfigFromForm() {
+function formatBatchJson() {
+  try {
+    setEditorValue(pretty(JSON.parse(editorValue())));
+    showJsonErrors("batch-errors", []);
+  } catch (error) {
+    showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
+  }
+}
+
+/** Add the editable JSON configuration to the batch scenario array. */
+async function addCurrentConfigAsScenario() {
   if (!jsonModalProduct) return;
-  configBuffers[jsonModalProduct] = null;
-  setEditorValue("config", pretty(currentConfig(jsonModalProduct)));
-  showJsonErrors("json-errors", []);
-}
-
-function formatEditor(which, errorsId) {
+  let config;
   try {
-    setEditorValue(which, pretty(JSON.parse(editorValue(which))));
-    showJsonErrors(errorsId, []);
+    config = JSON.parse(editorValue());
   } catch (error) {
-    showJsonErrors(errorsId, [`Invalid JSON: ${error.message}`]);
+    showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
+    return;
   }
-}
-
-async function validateConfigJson() {
-  if (!jsonModalProduct) return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(editorValue("config"));
-  } catch (error) {
-    showJsonErrors("json-errors", [`Invalid JSON: ${error.message}`]);
-    return null;
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    showJsonErrors("batch-errors", ["Scenario configuration must be a JSON object."]);
+    return;
   }
-  const { ok, data } = await request(`/api/config/${jsonModalProduct}/validate`, "POST", parsed);
+  const normalizedConfig = normalizeScenarioConfig(jsonModalProduct, config);
+  const { ok, data } = await request(`/api/config/${jsonModalProduct}/validate`, "POST", normalizedConfig);
   if (!ok) {
-    showJsonErrors("json-errors", ["Validation failed", ...(data.errors ?? [])]);
+    showJsonErrors("batch-errors", ["Current configuration is invalid", ...(data.errors ?? [])]);
+    return;
+  }
+  const scenarioName = await pushScenario(jsonModalProduct, normalizedConfig);
+  if (!scenarioName) return;
+  showJsonErrors("batch-errors", []);
+  showBatchSuccess(`${scenarioName} added to the scenario list.`);
+}
+
+async function pushScenario(product, config) {
+  const { ok, data } = await request("/api/scenarios", "POST", { product, config: deepClone(config) });
+  if (!ok) {
+    const errors = data.errors ?? ["Could not save scenario"];
+    if (jsonModalProduct) showJsonErrors("batch-errors", errors);
+    else showMessage("error", errors);
     return null;
   }
-  showJsonErrors("json-errors", []);
-  return parsed;
+  savedScenarios.car = data.scenarios.car;
+  savedScenarios.health = data.scenarios.health;
+  renderMainScenarios("car");
+  renderMainScenarios("health");
+  return data.scenario.name;
 }
 
-async function applyConfigJson() {
-  const parsed = await validateConfigJson();
-  if (!parsed) return;
-  applyConfigToForm(jsonModalProduct, parsed);
-  closeJsonModal();
-  showMessage("ok", ["JSON applied to the form. Click Save Configuration to persist."]);
-}
-
-/** JSON View source: builds a scenario from the editor buffer (with validation). */
-async function addJsonAsScenario() {
-  if (!jsonModalProduct) return;
-  const parsed = await validateConfigJson();
-  if (!parsed) return;
-  pushScenario(jsonModalProduct, parsed);
-  showJsonErrors("batch-errors", []);
-}
-
-/** Form View source: builds a scenario from the live form (validated). */
 async function addFormAsScenario(product) {
-  const { ok, data } = await request(`/api/config/${product}/validate`, "POST", currentConfig(product));
+  if (product === "car" && carClaimsLoading && !(await carClaimsLoading)) {
+    showMessage("error", ["Wait for claim options to load before adding this scenario."]);
+    return;
+  }
+  const config = currentConfig(product);
+  const { ok, data } = await request(`/api/config/${product}/validate`, "POST", config);
   if (!ok) {
     showMessage("error", ["Current configuration is invalid", ...(data.errors ?? [])]);
     return;
   }
-  pushScenario(product, currentConfig(product));
-  showMessage("ok", ["Current form configuration added as a scenario."]);
+  const scenarioName = await pushScenario(product, config);
+  if (scenarioName) showMessage("ok", [`${scenarioName} saved in the ${product} scenario list below.`]);
 }
 
-function pushScenario(product, config) {
-  const batch = readBatchBuffer(product);
-  if (batch.product && batch.product !== product) {
-    showJsonErrors("batch-errors", [`Batch product must be "${product}"`]);
+async function deleteSavedScenario(product, index) {
+  const { ok, data } = await request("/api/scenarios", "DELETE", { product, index });
+  if (!ok) {
+    showMessage("error", data.errors ?? ["Could not delete scenario"]);
     return;
   }
-  batch.product = product;
-  if (!Array.isArray(batch.scenarios)) batch.scenarios = [];
-  // Deep clone so scenario edits and the source (form or editor) never share refs.
-  batch.scenarios.push({
-    name: `Scenario ${batch.scenarios.length + 1}`,
-    config: deepClone(config),
+  savedScenarios.car = data.scenarios.car;
+  savedScenarios.health = data.scenarios.health;
+  renderMainScenarios("car");
+  renderMainScenarios("health");
+}
+
+function beginInlineScenarioRename(product, index, row) {
+  const current = savedScenarios[product][index];
+  if (!current) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "scenario-name-input";
+  input.value = current.name;
+  input.setAttribute("aria-label", "Scenario name");
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "Save";
+  save.className = "primary";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  const saveName = async () => {
+    const name = input.value.trim();
+    if (!name || name === current.name) {
+      renderMainScenarios(product);
+      return;
+    }
+    save.disabled = true;
+    const { ok, data } = await request("/api/scenarios", "PUT", { product, index, name });
+    if (!ok) {
+      save.disabled = false;
+      showMessage("error", data.errors ?? ["Could not rename scenario"]);
+      input.focus();
+      return;
+    }
+    savedScenarios.car = data.scenarios.car;
+    savedScenarios.health = data.scenarios.health;
+    renderMainScenarios("car");
+    renderMainScenarios("health");
+    showMessage("ok", [`Scenario renamed to "${name}".`]);
+  };
+  save.addEventListener("click", saveName);
+  cancel.addEventListener("click", () => renderMainScenarios(product));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") void saveName();
+    if (event.key === "Escape") renderMainScenarios(product);
   });
-  writeBatchBuffer(product, batch);
+  row.querySelector("button[data-main-scenario-view]")?.replaceWith(input);
+  row.querySelector("button[data-main-scenario-rename]")?.replaceWith(save);
+  row.querySelector("button[data-main-scenario-delete]")?.replaceWith(cancel);
+  input.focus();
+  input.select();
+}
+
+async function renameSavedScenario(product, index, row) {
+  if (!row) return;
+  beginInlineScenarioRename(product, index, row);
+}
+
+function showSavedScenario(product, index) {
+  const scenario = savedScenarios[product][index];
+  if (!scenario) return;
+  if (product === "car") applyCarConfig(scenario.config);
+  else applyHealthConfig(scenario.config);
+  updateCarSummary();
+  updateHealthSummary();
+  clearMessage();
+}
+
+async function runAllSavedScenarios(product) {
+  const scenarios = savedScenarios[product];
+  if (!scenarios.length) {
+    showMessage("error", [`No ${product} scenarios have been saved.`]);
+    return;
+  }
+  const validation = await request("/api/batch/validate", "POST", { product, scenarios });
+  if (!validation.ok) {
+    showMessage("error", validation.data.errors ?? ["Scenario validation failed"]);
+    return;
+  }
+  const testOptions = await saveTestOptions();
+  if (!testOptions.ok) {
+    showMessage("error", testOptions.data.errors ?? ["Could not save execution mode"]);
+    return;
+  }
+  const result = await request("/api/batch/run", "POST", { product, scenarios });
+  if (!result.ok) {
+    showMessage("error", result.data.errors ?? ["Could not start scenarios"]);
+    return;
+  }
+  setRunButtonsDisabled(true);
+  if (!runPoll) runPoll = setInterval(refreshRunStatus, 1000);
+  await refreshRunStatus();
+}
+
+function removeBatchScenario(index) {
+  if (!activeEditorProduct) return;
+  const batch = readBatchBuffer(activeEditorProduct);
+  if (!batch || !Array.isArray(batch.scenarios) || index < 0 || index >= batch.scenarios.length) return;
+  const [removed] = batch.scenarios.splice(index, 1);
+  writeBatchBuffer(activeEditorProduct, batch);
+  showJsonErrors("batch-errors", []);
+  showBatchSuccess(`${removed?.name ?? `Scenario ${index + 1}`} removed.`);
+}
+
+function showScenarioConfig(index) {
+  if (!activeEditorProduct) return;
+  const batch = readBatchBuffer(activeEditorProduct);
+  const scenario = batch?.scenarios?.[index];
+  if (!scenario?.config) return;
+  setEditorValue(pretty(scenario.config));
+  configDrafts[activeEditorProduct] = editorValue();
+  showJsonErrors("batch-errors", []);
+  showBatchSuccess(`${scenario.name ?? `Scenario ${index + 1}`} configuration loaded for viewing.`);
+}
+
+function showBatchResultConfig(index) {
+  const scenario = latestBatchState?.results?.[index];
+  if (!scenario?.config || !latestBatchState?.product) return;
+  const product = latestBatchState.product;
+  const config = deepClone(scenario.config);
+  if (product === "car" && typeof config.history?.claims === "string") {
+    config.history.claims = options.car.claims[config.history.claims] ?? config.history.claims;
+  }
+  activeEditorProduct = product;
+  jsonModalProduct = product;
+  $("json-modal-title").textContent = `${product === "car" ? "Car" : "Health"} Batch Scenarios`;
+  setEditorValue(pretty(config));
+  configDrafts[product] = editorValue();
+  $("json-modal").hidden = false;
+  refreshEditors();
+  showJsonErrors("batch-errors", []);
+  showBatchSuccess(`${scenario.name} configuration loaded for viewing.`);
+  renderScenarioList(product);
 }
 
 async function validateBatchJson() {
   if (!jsonModalProduct) return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(editorValue("batch"));
-  } catch (error) {
-    showJsonErrors("batch-errors", [`Invalid JSON: ${error.message}`]);
+  const batch = readBatchBuffer(jsonModalProduct);
+  if (!batch || !Array.isArray(batch.scenarios)) {
+    showJsonErrors("batch-errors", ["Scenario list is invalid. Add at least one valid JSON configuration first."]);
     return null;
   }
-  if (parsed.product && parsed.product !== jsonModalProduct) {
-    showJsonErrors("batch-errors", [`Batch product must be "${jsonModalProduct}"`]);
-    return null;
-  }
+  const scenarios = batch.scenarios;
   const { ok, data } = await request("/api/batch/validate", "POST", {
     product: jsonModalProduct,
-    scenarios: parsed.scenarios,
+    scenarios,
   });
   if (!ok) {
     showJsonErrors("batch-errors", ["Batch validation failed", ...(data.errors ?? [])]);
     return null;
   }
   showJsonErrors("batch-errors", []);
-  return parsed;
+  return { ...batch, scenarios };
 }
 
 async function runBatchJson() {
@@ -956,7 +1593,8 @@ async function runBatchJson() {
 
   const testOptions = await saveTestOptions();
   if (!testOptions.ok) {
-    showJsonErrors("batch-errors", ["Could not save execution mode", ...(testOptions.data.errors ?? [])]);
+    if (jsonModalProduct) showJsonErrors("batch-errors", ["Could not save execution mode", ...(testOptions.data.errors ?? [])]);
+    else showMessage("error", ["Could not save execution mode", ...(testOptions.data.errors ?? [])]);
     return;
   }
 
@@ -967,6 +1605,47 @@ async function runBatchJson() {
   if (!ok) {
     showJsonErrors("batch-errors", ["Could not start batch", ...(data.errors ?? [])]);
     return;
+  }
+  setRunButtonsDisabled(true);
+  if (!runPoll) runPoll = setInterval(refreshRunStatus, 1000);
+  await refreshRunStatus();
+}
+
+async function runOneScenario(product, index) {
+  const scenario = savedScenarios[product]?.[index];
+  if (!scenario) return;
+  await runScenarioDefinition(product, scenario);
+}
+
+async function runScenarioDefinition(product, scenario) {
+  const { ok, data } = await request("/api/batch/validate", "POST", {
+    product,
+    scenarios: [scenario],
+  });
+  if (!ok) {
+    if (jsonModalProduct) showJsonErrors("batch-errors", ["Scenario validation failed", ...(data.errors ?? [])]);
+    else showMessage("error", ["Scenario validation failed", ...(data.errors ?? [])]);
+    return;
+  }
+  const testOptions = await saveTestOptions();
+  if (!testOptions.ok) {
+    showJsonErrors("batch-errors", ["Could not save execution mode", ...(testOptions.data.errors ?? [])]);
+    return;
+  }
+  const result = await request("/api/batch/run", "POST", {
+    product,
+    scenarios: [scenario],
+  });
+  if (!result.ok) {
+    if (jsonModalProduct) showJsonErrors("batch-errors", ["Could not start scenario", ...(result.data.errors ?? [])]);
+    else showMessage("error", ["Could not start scenario", ...(result.data.errors ?? [])]);
+    return;
+  }
+  if (jsonModalProduct) {
+    showJsonErrors("batch-errors", []);
+    showBatchSuccess(`${scenario.name ?? "Scenario"} started.`);
+  } else {
+    showMessage("ok", [`${scenario.name ?? "Scenario"} started.`]);
   }
   setRunButtonsDisabled(true);
   if (!runPoll) runPoll = setInterval(refreshRunStatus, 1000);
@@ -1016,6 +1695,17 @@ function renderApiResult(state) {
 async function startRun(target) {
   clearMessage();
 
+  if (target.startsWith("car-")) {
+    if (carClaimsLoading && !(await carClaimsLoading)) {
+      showMessage("error", ["Could not start the test because claim options are unavailable."]);
+      return;
+    }
+    if ($("car-claims").disabled) {
+      showMessage("error", ["Wait for claim options to load before starting the test."]);
+      return;
+    }
+  }
+
   // Persist the currently selected execution mode first, so E2E Run always
   // honors it even without Save. API runs ignore it (no browser).
   const testOptions = await saveTestOptions();
@@ -1027,7 +1717,9 @@ async function startRun(target) {
     return;
   }
 
-  const { ok, data } = await request("/api/run", "POST", { target });
+  const body = { target };
+  if (target.startsWith("car-")) body.config = collectCarConfig();
+  const { ok, data } = await request("/api/run", "POST", body);
   if (!ok) {
     showMessage("error", [data.errors?.[0] ?? `Could not start ${target}`]);
     return;
@@ -1038,6 +1730,16 @@ async function startRun(target) {
 }
 
 function wireEvents() {
+  for (const id of ["car-brand", "car-model", "car-year", "car-trim", "car-nationality"]) {
+    $(id).addEventListener("click", (event) => {
+      try {
+        event.currentTarget.showPicker();
+      } catch {
+        // Typing still filters the native datalist on browsers without showPicker support.
+      }
+    });
+  }
+
   for (const tab of document.querySelectorAll(".tab")) {
     tab.addEventListener("click", () => {
       clearMessage();
@@ -1048,24 +1750,68 @@ function wireEvents() {
     });
   }
 
-  $("car-preset").addEventListener("change", (event) => {
-    applyCarConfig(carPresets[event.target.value]);
-    configBuffers.car = null;
-  });
+  // $("car-preset").addEventListener("change", (event) => {
+  //   applyCarConfig(carPresets[event.target.value]);
+  // });
   $("health-preset").addEventListener("change", (event) => {
     applyHealthConfig(healthPresets[event.target.value]);
-    configBuffers.health = null;
   });
 
   $("panel-car").addEventListener("input", updateCarSummary);
+  $("car-brand").addEventListener("change", () => {
+    updateCarVehicleDropdowns();
+    updateCarSummary();
+    if (liveCarMakes !== null) {
+      void loadLiveCarModels($("car-brand").value).catch((error) => {
+        $("car-catalog-status").textContent = String(error);
+      });
+    }
+  });
+  $("car-nationality").addEventListener("input", () => {
+    clearTimeout(carCountrySearchTimer);
+    const term = $("car-nationality").value.trim();
+    if (term.length < 2) {
+      setDatalist($("car-nationality"), carCountryOptions(), term, { preserveSelection: true });
+      return;
+    }
+    carCountrySearchTimer = setTimeout(async () => {
+      const { ok, data } = await request(`/api/car-catalog/countries?searchTerm=${encodeURIComponent(term)}`, "GET");
+      if (!ok || !Array.isArray(data.options)) return;
+      const countries = data.options
+        .filter((country) => country && typeof country.name === "string")
+        .map((country) => country.name);
+      if (countries.length) setDatalist($("car-nationality"), countries, term);
+    }, 250);
+  });
+  $("car-model").addEventListener("change", () => {
+    updateCarVehicleDropdowns({ preserveModel: true });
+    updateCarSummary();
+    if (liveCarMakes !== null) {
+      void loadLiveCarTrims().catch((error) => {
+        $("car-catalog-status").textContent = String(error);
+      });
+    }
+  });
+  $("car-year").addEventListener("change", () => {
+    updateCarVehicleDropdowns({ preserveModel: true, preserveYear: true });
+    if (liveCarMakes !== null) {
+      void loadLiveCarTrims().catch((error) => {
+        $("car-catalog-status").textContent = String(error);
+      });
+    }
+  });
   $("panel-car").addEventListener("change", updateCarSummary);
+  $("car-experience").addEventListener("change", () => {
+    void loadLiveCarClaims($("car-experience").value, $("car-claims").value);
+  });
   $("panel-health").addEventListener("input", updateHealthSummary);
   $("panel-health").addEventListener("change", updateHealthSummary);
 
-  $("car-save").addEventListener("click", saveCar);
   $("car-reset").addEventListener("click", resetCar);
   $("health-save").addEventListener("click", saveHealth);
   $("health-reset").addEventListener("click", resetHealth);
+  $("car-add-form-scenario").addEventListener("click", () => addFormAsScenario("car"));
+  $("health-add-form-scenario").addEventListener("click", () => addFormAsScenario("health"));
   $("open-ui").addEventListener("click", openUi);
   $("car-run").addEventListener("click", () => startRun("car-e2e"));
   $("health-run").addEventListener("click", () => startRun("health-e2e"));
@@ -1076,21 +1822,50 @@ function wireEvents() {
   $("api-health-happy").addEventListener("click", () => startRun("health-api-happy"));
   $("api-health-negative").addEventListener("click", () => startRun("health-api-negative"));
   $("stop-test").addEventListener("click", stopCurrentRun);
+  $("car-run-all-scenarios").addEventListener("click", () => runAllSavedScenarios("car"));
+  $("health-run-all-scenarios").addEventListener("click", () => runAllSavedScenarios("health"));
 
-  $("car-add-form-scenario").addEventListener("click", () => addFormAsScenario("car"));
-  $("health-add-form-scenario").addEventListener("click", () => addFormAsScenario("health"));
+  for (const product of ["car", "health"]) {
+    $(`${product}-scenario-list`).addEventListener("click", (event) => {
+      const copyCode = event.target.closest("button[data-copy-tracking-code]");
+      if (copyCode) {
+        navigator.clipboard?.writeText(copyCode.dataset.copyTrackingCode);
+        copyCode.textContent = "Copied";
+        setTimeout(() => { copyCode.textContent = "Copy"; }, 1200);
+        return;
+      }
+      const view = event.target.closest("button[data-main-scenario-view]");
+      if (view) return showSavedScenario(product, Number(view.dataset.mainScenarioView));
+      const run = event.target.closest("button[data-main-scenario-run]");
+      if (run) return void runOneScenario(product, Number(run.dataset.mainScenarioRun));
+      const rename = event.target.closest("button[data-main-scenario-rename]");
+      if (rename) return void renameSavedScenario(product, Number(rename.dataset.mainScenarioRename), rename.closest(".scenario-row"));
+      const remove = event.target.closest("button[data-main-scenario-delete]");
+      if (remove) return void deleteSavedScenario(product, Number(remove.dataset.mainScenarioDelete));
+    });
+  }
+
 
   $("car-json").addEventListener("click", () => openJsonModal("car"));
   $("health-json").addEventListener("click", () => openJsonModal("health"));
   $("json-close").addEventListener("click", closeJsonModal);
-  $("json-reload").addEventListener("click", reloadConfigFromForm);
-  $("json-format").addEventListener("click", () => formatEditor("config", "json-errors"));
-  $("json-validate").addEventListener("click", validateConfigJson);
-  $("json-apply").addEventListener("click", applyConfigJson);
-  $("batch-format").addEventListener("click", () => formatEditor("batch", "batch-errors"));
-  $("batch-add-json").addEventListener("click", addJsonAsScenario);
-  $("batch-validate").addEventListener("click", validateBatchJson);
-  $("batch-run").addEventListener("click", runBatchJson);
+  $("batch-format").addEventListener("click", formatBatchJson);
+  $("batch-add-current").addEventListener("click", addCurrentConfigAsScenario);
+  $("batch-table-body").addEventListener("click", (event) => {
+    const run = event.target.closest("button[data-result-run-index]");
+    if (run && latestBatchState?.results?.[Number(run.dataset.resultRunIndex)]?.config) {
+      const result = latestBatchState.results[Number(run.dataset.resultRunIndex)];
+      void runScenarioDefinition(latestBatchState.product, { name: result.name, config: result.config });
+      return;
+    }
+    const view = event.target.closest("button[data-result-view-index]");
+    if (view) {
+      showBatchResultConfig(Number(view.dataset.resultViewIndex));
+      return;
+    }
+    const button = event.target.closest("button[data-result-index]");
+    if (button) void removePreviousBatchResult(Number(button.dataset.resultIndex));
+  });
 }
 
 async function init() {
@@ -1109,10 +1884,11 @@ async function init() {
     applyExecutionMode(testOptionsData.options);
     applyCarConfig(carData.config);
     applyHealthConfig(healthData.config);
-    $("car-source").textContent = `Active source: ${carData.source}`;
     $("health-source").textContent = `Active source: ${healthData.source}`;
     initEditors();
     wireEvents();
+    await loadSavedScenarios();
+    void loadLiveCarCatalog();
     await refreshRunStatus();
   } catch (error) {
     showMessage("error", ["Failed to load Control Center data", String(error)]);

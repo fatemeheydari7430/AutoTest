@@ -229,6 +229,11 @@ button:disabled {
   cursor: not-allowed;
 }
 
+input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .runbar {
   display: flex;
   flex-wrap: wrap;
@@ -352,6 +357,134 @@ button.copy {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 12.5px;
   line-height: 1.5;
+}
+
+.scenario-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0;
+}
+
+.scenario-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.scenario-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 9px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.scenario-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.scenario-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scenario-result-status {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.scenario-result.passed .scenario-result-status { color: #86efac; background: rgba(34, 197, 94, 0.14); }
+.scenario-result.failed .scenario-result-status,
+.scenario-result.stopped .scenario-result-status { color: #fca5a5; background: rgba(239, 68, 68, 0.14); }
+.scenario-result.running .scenario-result-status { color: #93c5fd; background: rgba(59, 130, 246, 0.16); }
+
+.scenario-tracking-code {
+  color: var(--text);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.scenario-result-copy {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.scenario-result-error {
+  flex-basis: 100%;
+  color: #fca5a5;
+  overflow-wrap: anywhere;
+}
+
+.scenario-result-time {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.scenario-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.scenario-view {
+  flex: 1 1 auto;
+  padding: 7px 10px;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+
+.scenario-name-input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  width: 100%;
+}
+
+.scenario-run {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+}
+
+.scenario-result-view {
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+}
+
+#batch-table td:last-child {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.scenario-remove {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  color: #fecaca;
+  border-color: rgba(220, 38, 38, 0.65);
 }
 
 .batch-table {

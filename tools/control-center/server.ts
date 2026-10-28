@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { config } from '../../src/config/index.ts';
 import {
   E2E_PATHS,
   CAR_LEAD_TYPES,
@@ -35,6 +36,7 @@ import {
 import {
   isRunTarget,
   loadTestOptions,
+  removeLastBatchResult,
   recoverBatchBackup,
   runState,
   runTest,
@@ -50,7 +52,11 @@ import {
 
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const CODEMIRROR_DIR = path.resolve(process.cwd(), 'node_modules', 'codemirror');
+const SCENARIOS_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'scenarios.json');
 const CC_PORT = Number(process.env.CC_PORT ?? 4600);
+let carCatalogLeadPromise: Promise<string> | null = null;
+let carMakeCatalogPromise: Promise<{ id: number; make: string }[]> | null = null;
+let carCountryCatalogPromise: Promise<{ id: number | string; name: string }[]> | null = null;
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -61,6 +67,27 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
 };
 
+type ScenarioStore = Record<RunProduct, ScenarioDefinition[]>;
+
+function readScenarioStore(): ScenarioStore {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SCENARIOS_FILE, 'utf8')) as Partial<ScenarioStore>;
+    return {
+      car: Array.isArray(parsed.car) ? parsed.car : [],
+      health: Array.isArray(parsed.health) ? parsed.health : [],
+    };
+  } catch {
+    return { car: [], health: [] };
+  }
+}
+
+function writeScenarioStore(store: ScenarioStore): void {
+  fs.mkdirSync(path.dirname(SCENARIOS_FILE), { recursive: true });
+  const temporary = `${SCENARIOS_FILE}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  fs.renameSync(temporary, SCENARIOS_FILE);
+}
+
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -68,6 +95,136 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
     'Cache-Control': 'no-store',
   });
   res.end(payload);
+}
+
+async function carCatalogLeadCode(): Promise<string> {
+  if (!carCatalogLeadPromise) {
+    carCatalogLeadPromise = (async () => {
+      const leadResponse = await fetch(`${config.api.baseURL}${config.carInsurance.basePath}/lead`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_type: 'RENEW' }),
+      });
+      if (!leadResponse.ok) throw new Error(`Car catalog lead creation failed (${leadResponse.status})`);
+      const leadBody = await leadResponse.json() as { response?: { tracking_code?: unknown } };
+      const trackingCode = leadBody.response?.tracking_code;
+      if (typeof trackingCode !== 'string' || !trackingCode) {
+        throw new Error('Car catalog lead response did not include a tracking code');
+      }
+
+      const sourceResponse = await fetch(
+        `${config.api.baseURL}${config.carInsurance.basePath}/lead/motor-information-source`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', tracking_code: trackingCode },
+          body: JSON.stringify({ motor_information_source: 'MANUAL' }),
+        },
+      );
+      if (!sourceResponse.ok) throw new Error(`Car catalog setup failed (${sourceResponse.status})`);
+      return trackingCode;
+    })();
+  }
+
+  try {
+    return await carCatalogLeadPromise;
+  } catch (error) {
+    carCatalogLeadPromise = null;
+    throw error;
+  }
+}
+
+async function fetchCarCatalog(pathname: string): Promise<unknown> {
+  const trackingCode = await carCatalogLeadCode();
+  const response = await fetch(`${config.api.baseURL}${config.carInsurance.basePath}${pathname}`, {
+    headers: { tracking_code: trackingCode },
+  });
+  if (!response.ok) throw new Error(`Car catalog request failed (${response.status})`);
+  const body = await response.json() as { response?: unknown };
+  return body.response;
+}
+
+function makeNameFromCatalogItem(item: { id?: unknown; make?: unknown; logo_url?: unknown }): string | null {
+  if (typeof item.make === 'string' && item.make.trim()) return item.make.trim();
+  if (typeof item.logo_url !== 'string') return null;
+  const fileName = item.logo_url.split('/').pop()?.replace(/\.[a-z0-9]+(?:\?.*)?$/i, '');
+  if (!fileName) return null;
+
+  const slug = decodeURIComponent(fileName).toLowerCase();
+  const acronyms: Record<string, string> = {
+    baic: 'BAIC',
+    bmw: 'BMW',
+    byd: 'BYD',
+    gac: 'GAC',
+    gmc: 'GMC',
+    jac: 'JAC',
+    mg: 'MG',
+    mini: 'MINI',
+    uaz: 'UAZ',
+  };
+  const name = acronyms[slug]
+    ?? slug.split(/[-_\s]+/).map((part) => part ? part[0].toUpperCase() + part.slice(1) : '').join(' ');
+  return name || null;
+}
+
+async function allCarMakes(): Promise<{ id: number; make: string }[]> {
+  if (!carMakeCatalogPromise) {
+    carMakeCatalogPromise = (async () => {
+      const terms = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+      const byId = new Map<number, { id: number; make: string }>();
+      for (let index = 0; index < terms.length; index += 5) {
+        const batch = terms.slice(index, index + 5);
+        const pages = await Promise.all(batch.map((term) => fetchCarCatalog(
+          `/lead/manual/makes?searchTerm=${encodeURIComponent(term)}&size=500`,
+        )));
+        for (const page of pages) {
+          const content = (page as { content?: unknown[] } | undefined)?.content ?? [];
+          for (const raw of content) {
+            const item = raw as { id?: unknown; make?: unknown; logo_url?: unknown };
+            const id = Number(item.id);
+            const make = makeNameFromCatalogItem(item);
+            if (Number.isFinite(id) && make) byId.set(id, { id, make });
+          }
+        }
+      }
+      return [...byId.values()].sort((left, right) => left.make.localeCompare(right.make));
+    })();
+  }
+
+  try {
+    return await carMakeCatalogPromise;
+  } catch (error) {
+    carMakeCatalogPromise = null;
+    throw error;
+  }
+}
+
+async function fetchCarCountries(searchTerm = ''): Promise<{ id: number | string; name: string }[]> {
+  const query = new URLSearchParams({ size: '300' });
+  if (searchTerm.trim()) query.set('searchTerm', searchTerm.trim());
+  const response = await fetch(
+    `${config.api.baseURL}${config.carInsurance.basePath}/country?${query}`,
+    { headers: { Accept: 'application/json', 'Accept-Language': 'en', 'User-Agent': 'Mozilla/5.0 Lookinsure-QA-Control-Center' } },
+  );
+  if (!response.ok) throw new Error(`Country catalog request failed (${response.status})`);
+  const body = await response.json() as { response?: { content?: unknown[] } };
+  return (body.response?.content ?? []).flatMap((raw) => {
+    const item = raw as { id?: unknown; name?: unknown };
+    return item.id != null && typeof item.name === 'string' && item.name.trim()
+      ? [{ id: typeof item.id === 'number' ? item.id : String(item.id), name: item.name.trim() }]
+      : [];
+  });
+}
+
+async function allCarCountries(): Promise<{ id: number | string; name: string }[]> {
+  if (!carCountryCatalogPromise) {
+    carCountryCatalogPromise = fetchCarCountries();
+  }
+  try {
+    return await carCountryCatalogPromise;
+  } catch (error) {
+    carCountryCatalogPromise = null;
+    throw error;
+  }
 }
 
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
@@ -144,6 +301,35 @@ function optionsPayload(): unknown {
   };
 }
 
+async function fetchClaimOptions(drivingExperience: string): Promise<{ options: Record<string, string>; maxNoClaimDiscountYears: number }> {
+  const trackingCode = await carCatalogLeadCode();
+  const response = await fetch(
+    `${config.api.baseURL}${config.carInsurance.basePath}/lead/manual/driving-experience`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', tracking_code: trackingCode },
+      body: JSON.stringify({ driving_experience: drivingExperience }),
+    },
+  );
+  if (!response.ok) throw new Error(`Driving experience request failed (${response.status})`);
+  const body = await response.json() as {
+    successful?: boolean;
+    response?: { max_no_claim_discount_years?: unknown };
+  };
+  const max = Number(body.response?.max_no_claim_discount_years);
+  if (body.successful === false || !Number.isInteger(max) || max < 0) {
+    throw new Error('Driving experience response did not include a valid max_no_claim_discount_years');
+  }
+
+  const options: Record<string, string> = { CLAIM_0: CLAIMS.CLAIM_0 };
+  for (let year = 1; year <= Math.min(max, 4); year += 1) {
+    const key = `CLAIM_${year}`;
+    if (CLAIMS[key]) options[key] = CLAIMS[key];
+  }
+  if (max >= 4) options.CLAIM_FREE_OVER_4 = CLAIMS.CLAIM_FREE_OVER_4;
+  return { options, maxNoClaimDiscountYears: max };
+}
+
 async function handleApi(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -151,6 +337,74 @@ async function handleApi(
 ): Promise<void> {
   const method = req.method ?? 'GET';
   const route = `${method} ${url.pathname}`;
+
+  if (method === 'GET' && url.pathname === '/api/car-catalog/makes') {
+    const searchTerm = url.searchParams.get('searchTerm') ?? '';
+    if (!searchTerm.trim()) {
+      const makes = await allCarMakes();
+      return sendJson(res, 200, { ok: true, options: makes });
+    }
+    const page = await fetchCarCatalog(
+      `/lead/manual/makes?searchTerm=${encodeURIComponent(searchTerm)}&size=500`,
+    ) as { content?: unknown[] } | undefined;
+    const makes = (page?.content ?? []).flatMap((raw) => {
+      const item = raw as { id?: unknown; make?: unknown; logo_url?: unknown };
+      const id = Number(item.id);
+      const make = makeNameFromCatalogItem(item);
+      return Number.isFinite(id) && make ? [{ id, make }] : [];
+    });
+    return sendJson(res, 200, { ok: true, options: makes });
+  }
+
+  if (method === 'GET' && url.pathname === '/api/car-catalog/countries') {
+    const searchTerm = url.searchParams.get('searchTerm') ?? '';
+    const countries = searchTerm.trim()
+      ? await fetchCarCountries(searchTerm)
+      : await allCarCountries();
+    return sendJson(res, 200, { ok: true, options: countries });
+  }
+
+  if (method === 'GET' && url.pathname === '/api/car-catalog/claims') {
+    const drivingExperience = url.searchParams.get('drivingExperience') ?? '';
+    if (!Object.prototype.hasOwnProperty.call(DRIVING_EXPERIENCES, drivingExperience)) {
+      return sendJson(res, 400, { ok: false, errors: ['A valid drivingExperience is required'] });
+    }
+    const result = await fetchClaimOptions(drivingExperience);
+    return sendJson(res, 200, { ok: true, ...result });
+  }
+
+  if (method === 'GET' && url.pathname === '/api/car-catalog/models') {
+    const make = url.searchParams.get('make');
+    if (!make) return sendJson(res, 400, { ok: false, errors: ['make is required'] });
+    const result = await fetchCarCatalog(
+      `/lead/manual/models?make=${encodeURIComponent(make)}&size=500&page=1`,
+    ) as { content?: unknown[] } | unknown[] | undefined;
+    const models = Array.isArray(result) ? result : result?.content;
+    return sendJson(res, 200, { ok: true, options: Array.isArray(models) ? models : [] });
+  }
+
+  if (method === 'GET' && url.pathname === '/api/car-catalog/trims') {
+    const make = url.searchParams.get('make');
+    const model = url.searchParams.get('model');
+    const year = url.searchParams.get('year');
+    if (!make || !model || !year) {
+      return sendJson(res, 400, { ok: false, errors: ['make, model and year are required'] });
+    }
+    const trackingCode = await carCatalogLeadCode();
+    const yearResponse = await fetch(
+      `${config.api.baseURL}${config.carInsurance.basePath}/lead/manual/year`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', tracking_code: trackingCode },
+        body: JSON.stringify({ make, model, year: Number(year) }),
+      },
+    );
+    if (!yearResponse.ok) throw new Error(`Car catalog year selection failed (${yearResponse.status})`);
+    const trims = await fetchCarCatalog(
+      `/lead/manual/trims?make=${encodeURIComponent(make)}&model=${encodeURIComponent(model)}&year=${encodeURIComponent(year)}`,
+    );
+    return sendJson(res, 200, { ok: true, options: Array.isArray(trims) ? trims : [] });
+  }
 
   switch (route) {
     case 'GET /api/options':
@@ -222,6 +476,75 @@ async function handleApi(
         : sendJson(res, 200, { ok: true });
     }
 
+    case 'GET /api/scenarios':
+      return sendJson(res, 200, { ok: true, scenarios: readScenarioStore() });
+
+    case 'POST /api/scenarios': {
+      let body: unknown;
+      try { body = await readJsonBody(req); } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const product = (body as { product?: unknown } | undefined)?.product;
+      const configBody = (body as { config?: unknown } | undefined)?.config;
+      if (product !== 'car' && product !== 'health') {
+        return sendJson(res, 400, { ok: false, errors: ['product must be "car" or "health"'] });
+      }
+      const errors = product === 'car' ? validateCarConfig(configBody) : validateHealthConfig(configBody);
+      if (errors.length) return sendJson(res, 400, { ok: false, errors });
+      const store = readScenarioStore();
+      const existingNames = new Set(store[product].map((scenario) => scenario.name));
+      let number = 1;
+      while (existingNames.has(`Scenario ${number}`)) number += 1;
+      const scenario = { name: `Scenario ${number}`, config: configBody };
+      store[product].push(scenario);
+      writeScenarioStore(store);
+      return sendJson(res, 201, { ok: true, scenario, scenarios: store });
+    }
+
+    case 'PUT /api/scenarios': {
+      let body: unknown;
+      try { body = await readJsonBody(req); } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const input = body as { product?: unknown; index?: unknown; name?: unknown } | undefined;
+      if ((input?.product !== 'car' && input?.product !== 'health')
+        || typeof input.index !== 'number' || !Number.isInteger(input.index)
+        || typeof input.name !== 'string' || !input.name.trim()) {
+        return sendJson(res, 400, { ok: false, errors: ['Valid product, integer index and non-empty name are required'] });
+      }
+      const store = readScenarioStore();
+      if (input.index < 0 || input.index >= store[input.product].length) {
+        return sendJson(res, 404, { ok: false, errors: ['Scenario not found'] });
+      }
+      const name = input.name.trim();
+      if (store[input.product].some((scenario, index) => index !== input.index
+        && scenario.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+        return sendJson(res, 409, { ok: false, errors: ['A scenario with this name already exists'] });
+      }
+      store[input.product][input.index].name = name;
+      writeScenarioStore(store);
+      return sendJson(res, 200, { ok: true, scenarios: store });
+    }
+
+    case 'DELETE /api/scenarios': {
+      let body: unknown;
+      try { body = await readJsonBody(req); } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const input = body as { product?: unknown; index?: unknown } | undefined;
+      if ((input?.product !== 'car' && input?.product !== 'health')
+        || typeof input.index !== 'number' || !Number.isInteger(input.index)) {
+        return sendJson(res, 400, { ok: false, errors: ['Valid product and integer index are required'] });
+      }
+      const store = readScenarioStore();
+      if (input.index < 0 || input.index >= store[input.product].length) {
+        return sendJson(res, 404, { ok: false, errors: ['Scenario not found'] });
+      }
+      const [removed] = store[input.product].splice(input.index, 1);
+      writeScenarioStore(store);
+      return sendJson(res, 200, { ok: true, removed, scenarios: store });
+    }
+
     case 'POST /api/batch/validate': {
       let body: unknown;
       try {
@@ -238,6 +561,24 @@ async function handleApi(
       return errors.length > 0
         ? sendJson(res, 400, { ok: false, errors })
         : sendJson(res, 200, { ok: true, count: Array.isArray(scenarios) ? scenarios.length : 0 });
+    }
+
+    case 'POST /api/batch/results/remove': {
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return sendJson(res, 400, { ok: false, errors: ['Body must be valid JSON'] });
+      }
+      const index = (body as { index?: unknown } | undefined)?.index;
+      if (typeof index !== 'number' || !Number.isInteger(index)) {
+        return sendJson(res, 400, { ok: false, errors: ['index must be an integer'] });
+      }
+      const result = removeLastBatchResult(index);
+      if (!result.removed) {
+        return sendJson(res, 409, { ok: false, errors: [result.message ?? 'Could not remove batch result'] });
+      }
+      return sendJson(res, 200, { ok: true, batch: result.batch ?? null });
     }
 
     case 'POST /api/batch/run': {
@@ -324,7 +665,13 @@ async function handleApi(
           errors: [`target must be one of: ${RUN_TARGETS.join(', ')}`],
         });
       }
-      const result = runTest(target);
+      const runBody = body as { config?: unknown };
+      const config = target.startsWith('car-') ? runBody.config : undefined;
+      if (config !== undefined) {
+        const errors = validateCarConfig(config);
+        if (errors.length > 0) return sendJson(res, 400, { ok: false, errors });
+      }
+      const result = runTest(target, config);
       if (!result.started) {
         return sendJson(res, 409, { ok: false, errors: [result.message ?? 'A test is already running'] });
       }

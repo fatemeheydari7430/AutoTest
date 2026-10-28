@@ -43,14 +43,10 @@
 
     <main>
       <section id="panel-car" class="panel active">
-        <div class="row">
-          <label for="car-preset">Preset</label>
-          <select id="car-preset" class="preset"></select>
-        </div>
+
 
         <div class="grid">
           <div class="field">
-            <label for="car-lead-type">Lead Type (online flow)</label>
             <select id="car-lead-type"></select>
           </div>
         </div>
@@ -61,24 +57,24 @@
         <h2>Vehicle</h2>
         <div class="grid">
           <div class="field">
-            <label for="car-brand">Brand</label>
-            <input id="car-brand" list="car-brands" autocomplete="off" />
-            <datalist id="car-brands"></datalist>
+            <label for="car-brand">Make</label>
+            <input id="car-brand" list="car-brand-options" autocomplete="off" />
+            <datalist id="car-brand-options"></datalist>
           </div>
           <div class="field">
             <label for="car-model">Model</label>
-            <input id="car-model" list="car-models" autocomplete="off" />
-            <datalist id="car-models"></datalist>
+            <input id="car-model" list="car-model-options" autocomplete="off" />
+            <datalist id="car-model-options"></datalist>
           </div>
           <div class="field">
             <label for="car-year">Year</label>
-            <input id="car-year" list="car-years" autocomplete="off" />
-            <datalist id="car-years"></datalist>
+            <input id="car-year" list="car-year-options" autocomplete="off" />
+            <datalist id="car-year-options"></datalist>
           </div>
           <div class="field">
             <label for="car-trim">Trim</label>
-            <input id="car-trim" list="car-trims" autocomplete="off" />
-            <datalist id="car-trims"></datalist>
+            <input id="car-trim" list="car-trim-options" autocomplete="off" />
+            <datalist id="car-trim-options"></datalist>
           </div>
           <div class="field">
             <label for="car-specification">Specification</label>
@@ -89,13 +85,14 @@
             <select id="car-emirate"></select>
           </div>
         </div>
+        <p id="car-catalog-status" class="source" role="status">Loading available vehicle options…</p>
 
         <h2>Driver</h2>
         <div class="grid">
           <div class="field">
             <label for="car-nationality">Nationality</label>
-            <input id="car-nationality" list="car-nationalities" autocomplete="off" />
-            <datalist id="car-nationalities"></datalist>
+            <input id="car-nationality" list="car-nationality-options" autocomplete="off" />
+            <datalist id="car-nationality-options"></datalist>
           </div>
           <div class="field dob">
             <label>Date of Birth</label>
@@ -116,6 +113,7 @@
           <div class="field">
             <label for="car-claims">Claims</label>
             <select id="car-claims"></select>
+            <span id="car-claims-status" class="source" aria-live="polite"></span>
           </div>
           <div class="field">
             <label for="car-email">Contact email</label>
@@ -124,16 +122,20 @@
         </div>
 
         <div class="actions">
-          <button id="car-save" class="primary">Save Configuration</button>
           <button id="car-reset">Reset Default</button>
           <button id="car-run">Run Car Test</button>
+          <button id="car-add-form-scenario">Add Current Configuration as Scenario</button>
           <button id="car-json">View / Edit JSON</button>
-          <button id="car-add-form-scenario">Add Form Configuration as Scenario</button>
-          <span id="car-source" class="source"></span>
         </div>
 
         <h2>Last Result</h2>
         <div id="car-last-result" class="result">No run yet.</div>
+        <h2>Car Scenarios</h2>
+        <div class="scenario-toolbar">
+          <span id="car-scenario-count" class="source">Loading scenarios…</span>
+          <button id="car-run-all-scenarios" class="primary">Run All Car Scenarios</button>
+        </div>
+        <div id="car-scenario-list" class="scenario-list"></div>
       </section>
 
       <section id="panel-health" class="panel">
@@ -187,13 +189,19 @@
           <button id="health-save" class="primary">Save Configuration</button>
           <button id="health-reset">Reset Default</button>
           <button id="health-run">Run Health Test</button>
+          <button id="health-add-form-scenario">Add Current Configuration as Scenario</button>
           <button id="health-json">View / Edit JSON</button>
-          <button id="health-add-form-scenario">Add Form Configuration as Scenario</button>
           <span id="health-source" class="source"></span>
         </div>
 
         <h2>Last Result</h2>
         <div id="health-last-result" class="result">No run yet.</div>
+        <h2>Health Scenarios</h2>
+        <div class="scenario-toolbar">
+          <span id="health-scenario-count" class="source">Loading scenarios…</span>
+          <button id="health-run-all-scenarios" class="primary">Run All Health Scenarios</button>
+        </div>
+        <div id="health-scenario-list" class="scenario-list"></div>
       </section>
 
       <section id="panel-api" class="panel">
@@ -219,29 +227,18 @@
     <div id="json-modal" class="modal" hidden>
       <div class="modal-content">
         <div class="modal-header">
-          <h2 id="json-modal-title">Configuration JSON</h2>
+          <h2 id="json-modal-title">Batch Scenarios</h2>
           <button id="json-close">Close</button>
         </div>
 
-        <h3>Configuration</h3>
-        <textarea id="config-json" class="json-area" spellcheck="false"></textarea>
-        <div class="actions">
-          <button id="json-reload">Reload from Form</button>
-          <button id="json-format">Format JSON</button>
-          <button id="json-validate">Validate JSON</button>
-          <button id="json-apply" class="primary">Apply to Form</button>
-        </div>
-        <div id="json-errors" class="message error" hidden></div>
-
-        <h3>Batch Scenarios</h3>
+        <h3>Selected Scenario Configuration JSON</h3>
         <textarea id="batch-json" class="json-area" spellcheck="false"></textarea>
         <div class="actions">
-          <button id="batch-add-json">Add JSON Configuration as Scenario</button>
+          <button id="batch-add-current">Add JSON Configuration as Scenario</button>
           <button id="batch-format">Format JSON</button>
-          <button id="batch-validate">Validate Batch</button>
-          <button id="batch-run" class="primary">Run All Scenarios</button>
         </div>
         <div id="batch-errors" class="message error" hidden></div>
+        <div id="batch-success" class="message ok" hidden></div>
 
         <h3>Batch Progress</h3>
         <div id="batch-progress" class="summary">No batch has been run.</div>
@@ -252,6 +249,7 @@
               <th>Status</th>
               <th>Duration</th>
               <th>Tracking Code</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody id="batch-table-body"></tbody>

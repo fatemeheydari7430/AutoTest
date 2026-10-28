@@ -38,6 +38,7 @@ export interface ScenarioDefinition {
 
 export interface ScenarioResult {
   name: string;
+  config?: unknown;
   status: ScenarioStatus;
   duration: number | null;
   trackingCode: string | null;
@@ -407,6 +408,10 @@ function onChildClose(controller: Controller, code: number | null, errorMessage:
 
   if (controller.mode === 'single') {
     saveRunResult(controller, status, error, duration);
+    if (controller.backup !== undefined) {
+      restoreRuntime(controller.product, controller.backup);
+      deleteBackup();
+    }
     retained = { product: controller.product, lines: [...controller.output] };
     active = null;
     return;
@@ -417,6 +422,7 @@ function onChildClose(controller: Controller, code: number | null, errorMessage:
   if (controller.results) {
     controller.results[index] = {
       name: scenarios[index]?.name ?? `scenario ${index + 1}`,
+      config: scenarios[index]?.config,
       status,
       duration,
       trackingCode: controller.trackingCode,
@@ -465,8 +471,17 @@ function finishBatch(controller: Controller, status: BatchStatus): void {
 
 // ---- public actions ----
 
-export function runTest(target: RunTarget): { started: boolean; message?: string } {
+export function runTest(target: RunTarget, config?: unknown): { started: boolean; message?: string } {
   if (active) return { started: false, message: `A ${active.product} run is already active` };
+  let backup: string | null | undefined;
+  if (config !== undefined) {
+    const product = TARGET_CONFIG[target].product;
+    const errors = product === 'car' ? validateCarConfig(config) : validateHealthConfig(config);
+    if (errors.length > 0) return { started: false, message: errors.join('\n') };
+    backup = readRuntimeConfig(product);
+    writeJson(BACKUP_FILE, { product, content: backup });
+    applyScenarioConfig(product, config);
+  }
   const controller: Controller = {
     mode: 'single',
     target,
@@ -478,6 +493,7 @@ export function runTest(target: RunTarget): { started: boolean; message?: string
     summary: null,
     stopped: false,
     child: null,
+    backup,
   };
   active = controller;
   beginChild(controller);
@@ -513,6 +529,7 @@ export function startBatch(
     index: 0,
     results: scenarios.map((scenario) => ({
       name: scenario.name,
+      config: scenario.config,
       status: 'not-run',
       duration: null,
       trackingCode: null,
@@ -541,4 +558,24 @@ export function stopActive(): { stopped: boolean; message?: string } {
     }
   }
   return { stopped: true };
+}
+
+export function removeLastBatchResult(
+  index: number,
+): { removed: boolean; message?: string; batch?: BatchResult | null } {
+  if (active) return { removed: false, message: 'Cannot remove batch results while a test is running' };
+  if (!lastBatch || !Number.isInteger(index) || index < 0 || index >= lastBatch.results.length) {
+    return { removed: false, message: 'Batch result was not found' };
+  }
+
+  const results = lastBatch.results.filter((_, resultIndex) => resultIndex !== index);
+  if (results.length === 0) {
+    lastBatch = null;
+    rmSync(LAST_BATCH_FILE, { force: true });
+    return { removed: true, batch: null };
+  }
+
+  lastBatch = { ...lastBatch, results };
+  saveLastBatch(lastBatch);
+  return { removed: true, batch: lastBatch };
 }

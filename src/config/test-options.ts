@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const CAR_LEAD_TYPES: Record<string, string> = {
-  RENEW: 'Renewal',
+  RENEW: 'Renew',
   TRANSFER_OF_OWNER_SHIP: 'Transfer of Ownership',
 };
 
