@@ -343,7 +343,8 @@ function handleLine(controller: Controller, line: string): void {
         controller.output.push(`Summary: ${passed} passed, ${failed} failed, ${skipped} skipped`);
         return;
       }
-      if (event.type === 'result-warning' && event.warning === 'Empty list' && controller.target === 'car-e2e') {
+      if (event.type === 'result-warning' && event.warning === 'Empty list'
+        && (controller.target === 'car-e2e' || controller.target === 'health-e2e')) {
         controller.warning = 'Empty list';
         controller.output.push('Warning: Empty list');
         return;

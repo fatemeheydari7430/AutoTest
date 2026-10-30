@@ -52,7 +52,7 @@
     }
   },
   "transfer": {
-    "leadType": "TRANSFER_OF_OWNER_SHIP",
+    "leadType": "TRANSFER_OF_OWNERSHIP",
     "vehicle": {
       "brand": "Toyota",
       "model": "COROLLA",

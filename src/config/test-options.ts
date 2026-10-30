@@ -3,7 +3,11 @@ import path from 'node:path';
 
 export const CAR_LEAD_TYPES: Record<string, string> = {
   RENEW: 'Renew',
-  TRANSFER_OF_OWNER_SHIP: 'Transfer of Ownership',
+  TRANSFER_OF_OWNERSHIP: 'Transfer of Ownership',
+};
+
+const LEGACY_CAR_LEAD_TYPE_ALIASES: Record<string, string> = {
+  TRANSFER_OF_OWNER_SHIP: 'TRANSFER_OF_OWNERSHIP',
 };
 
 export const CAR_SPECIFICATIONS: Record<string, string> = {
@@ -239,7 +243,11 @@ export function validateCarConfig(input: unknown): string[] {
   const errors = collectSensitiveKeys(input);
   if (!isRecord(input)) return [...errors, 'Car config must be an object'];
 
-  errors.push(...validateEnum(input.leadType, CAR_LEAD_TYPES, 'leadType'));
+  const leadType =
+    typeof input.leadType === 'string'
+      ? LEGACY_CAR_LEAD_TYPE_ALIASES[input.leadType] ?? input.leadType
+      : input.leadType;
+  errors.push(...validateEnum(leadType, CAR_LEAD_TYPES, 'leadType'));
 
   const vehicle = input.vehicle;
   if (!isRecord(vehicle)) {

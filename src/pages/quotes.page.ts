@@ -19,15 +19,12 @@ export class QuotesPage extends BasePage {
     const quotesHeading = this.page.getByText('Choose affordable quotes').first();
     const emptyList = this.page.getByText(/empty list|no available quotes|no quotes found/i).first();
     const deadline = Date.now() + 45_000;
-    let headingSeenAt: number | null = null;
     while (Date.now() < deadline) {
+      // A real quote is authoritative even if the page still carries an
+      // EMPTY_LIST query parameter from an earlier/intermediate navigation.
+      if (await this.reviewButtons.first().isVisible().catch(() => false)) return false;
       if (this.isEmptyListUrl()) return true;
       if (await emptyList.isVisible().catch(() => false)) return true;
-      if (await this.reviewButtons.first().isVisible().catch(() => false)) return false;
-      if (await quotesHeading.isVisible().catch(() => false)) {
-        headingSeenAt ??= Date.now();
-        if (Date.now() - headingSeenAt >= 10_000) return (await this.reviewButtons.count()) === 0;
-      }
       await this.page.waitForTimeout(250);
     }
 

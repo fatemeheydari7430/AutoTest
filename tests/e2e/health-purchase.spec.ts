@@ -66,9 +66,19 @@ test.describe(
         );
       });
 
+      let emptyPlanList = false;
       await test.step('Load available plans', async () => {
-        await healthQuotesPage.expectLoaded();
+        emptyPlanList = await healthQuotesPage.expectLoaded();
       });
+
+      if (emptyPlanList) {
+        await test.step('Report empty plan list and close browser', async () => {
+          await page.waitForTimeout(2_000);
+          console.log('CONTROL_CENTER_EVENT {"type":"result-warning","warning":"Empty list"}');
+          await page.context().close();
+        });
+        return;
+      }
 
       await test.step('Select plan', async () => {
         await healthQuotesPage.selectFirstPlan();
@@ -78,12 +88,11 @@ test.describe(
         await healthPaymentPage.expectLoaded();
       });
 
-      const gatewayPage = await test.step('Open payment gateway', async () => {
-        return healthPaymentPage.payNow();
+      await test.step('Open payment gateway', async () => {
+        await healthPaymentPage.payNow();
       });
 
-      await test.step('Wait on payment gateway and close browser', async () => {
-        await gatewayPage.waitForTimeout(2_000);
+      await test.step('Close browser on payment gateway', async () => {
         await page.context().close();
       });
     });

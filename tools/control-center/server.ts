@@ -691,9 +691,11 @@ async function handleApi(
         });
       }
       const runBody = body as { config?: unknown };
-      const config = target.startsWith('car-') ? runBody.config : undefined;
+      const config = target.startsWith('car-') || target.startsWith('health-')
+        ? runBody.config
+        : undefined;
       if (config !== undefined) {
-        const errors = validateCarConfig(config);
+        const errors = target.startsWith('car-') ? validateCarConfig(config) : validateHealthConfig(config);
         if (errors.length > 0) return sendJson(res, 400, { ok: false, errors });
       }
       const result = runTest(target, config);

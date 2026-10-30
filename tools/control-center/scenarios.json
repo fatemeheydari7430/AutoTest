@@ -5,117 +5,95 @@
       "config": {
         "leadType": "RENEW",
         "vehicle": {
-          "brand": "Nissan",
-          "model": "SUNNY",
-          "year": "2024",
-          "trim": "SV-1.6 L-CVT-5gear-118 HP"
-        },
-        "specification": "GCC",
-        "emirate": "abuDhabi",
-        "driver": {
-          "nationality": "Pakistan",
-          "dateOfBirth": {
-            "year": "1993",
-            "month": "January",
-            "day": "7"
-          }
-        },
-        "history": {
-          "drivingExperience": "MORE_THAN_TWO_YEAR",
-          "claims": "CLAIM_2"
-        },
-        "contact": {
-          "email": "test@example.com"
-        }
-      }
-    },
-    {
-      "name": "Scenario 2",
-      "config": {
-        "leadType": "RENEW",
-        "vehicle": {
           "brand": "Toyota",
           "model": "COROLLA",
-          "year": "2025",
-          "trim": "XLI-1.5 L-3cyl-10gear-119 HP"
+          "year": "2024",
+          "trim": "GLI-1.6 L-121 HP"
         },
         "specification": "GCC",
-        "emirate": "ajman",
+        "emirate": "dubai",
         "driver": {
-          "nationality": "United Arab Emirates",
+          "nationality": "India",
           "dateOfBirth": {
             "year": "1995",
-            "month": "February",
-            "day": "1"
+            "month": "June",
+            "day": "15"
           }
         },
         "history": {
-          "drivingExperience": "LESS_THAN_ONE_YEAR",
-          "claims": "CLAIM_0"
+          "drivingExperience": "MORE_THAN_FIVE_YEAR",
+          "claims": "CLAIM_FREE_OVER_4"
         },
         "contact": {
-          "email": "test2@example.com"
+          "email": "qa.testing@example.com"
         }
       }
     },
     {
       "name": "Scenario 3",
       "config": {
-        "leadType": "RENEW",
+        "leadType": "TRANSFER_OF_OWNER_SHIP",
         "vehicle": {
-          "brand": "Toyota",
-          "model": "COROLLA",
+          "brand": "Nissan",
+          "model": "ALTIMA",
           "year": "2024",
-          "trim": "GLI-1.6 L-121 HP"
+          "trim": "S"
         },
         "specification": "GCC",
-        "emirate": "dubai",
+        "emirate": "abuDhabi",
         "driver": {
-          "nationality": "India",
+          "nationality": "United Arab Emirates",
           "dateOfBirth": {
-            "year": "1995",
-            "month": "June",
-            "day": "15"
+            "year": "1993",
+            "month": "January",
+            "day": "20"
           }
         },
         "history": {
-          "drivingExperience": "MORE_THAN_FIVE_YEAR",
-          "claims": "CLAIM_FREE_OVER_4"
+          "drivingExperience": "MORE_THAN_TWO_YEAR",
+          "claims": "CLAIM_1"
         },
         "contact": {
-          "email": "qa.testing@example.com"
-        }
-      }
-    },
-    {
-      "name": "Scenario 4",
-      "config": {
-        "leadType": "RENEW",
-        "vehicle": {
-          "brand": "Toyota",
-          "model": "COROLLA",
-          "year": "2024",
-          "trim": "GLI-1.6 L-121 HP"
-        },
-        "specification": "GCC",
-        "emirate": "dubai",
-        "driver": {
-          "nationality": "India",
-          "dateOfBirth": {
-            "year": "1995",
-            "month": "June",
-            "day": "15"
-          }
-        },
-        "history": {
-          "drivingExperience": "MORE_THAN_FIVE_YEAR",
-          "claims": "CLAIM_FREE_OVER_4"
-        },
-        "contact": {
-          "email": "qa.testing@example.com"
+          "email": "test@example.com"
         }
       }
     }
   ],
-  "health": []
+  "health": [
+    {
+      "name": "Scenario 1",
+      "config": {
+        "insureFor": "INDIVIDUAL",
+        "gender": "MALE",
+        "emirate": "dubai",
+        "salaryRange": "MORE_THAN_4000",
+        "members": [
+          {
+            "type": "YOURSELF",
+            "count": 1,
+            "dateOfBirths": [
+              {
+                "year": "1995",
+                "month": "June",
+                "day": "15"
+              }
+            ]
+          },
+          {
+            "type": "WIFE",
+            "count": 1,
+            "dateOfBirths": [
+              {
+                "year": "1993",
+                "month": "June",
+                "day": "15"
+              }
+            ]
+          }
+        ],
+        "isAnyMemberPregnant": false,
+        "medicalCondition": false
+      }
+    }
+  ]
 }

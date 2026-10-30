@@ -2,7 +2,6 @@ const $ = (id) => document.getElementById(id);
 
 let options = null;
 let carPresets = {};
-let healthPresets = {};
 let liveCarMakes = null;
 let liveCarCountries = null;
 const liveCarModels = new Map();
@@ -496,20 +495,17 @@ function populateOptions() {
   //   carPresetSelect.appendChild(option);
   // }
 
-  const healthPresetSelect = $("health-preset");
-  healthPresetSelect.innerHTML = "";
-  for (const name of Object.keys(healthPresets)) {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    healthPresetSelect.appendChild(option);
-  }
 }
 
 function applyCarConfig(config) {
+  const canonicalTransfer = "TRANSFER_OF_OWNERSHIP";
+  const leadType = config.leadType === "TRANSFER_OF_OWNER_SHIP"
+      && options?.car?.leadTypes?.[canonicalTransfer]
+    ? canonicalTransfer
+    : config.leadType;
   const nationalityValue = config.driver?.nationality ?? config.driver?.country ?? "";
   const nationality = typeof nationalityValue === "string" ? nationalityValue.trim() : "";
-  $("car-lead-type").value = config.leadType;
+  $("car-lead-type").value = leadType;
   setDatalist(
     $("car-brand"),
     carMakeOptions(),
@@ -651,37 +647,6 @@ async function loadLiveCarClaims(drivingExperience, preferredClaim = "") {
     }
   })();
   return carClaimsLoading;
-}
-
-async function saveHealth() {
-  const { ok, data } = await request("/api/config/health", "PUT", collectHealthConfig());
-  if (!ok) {
-    showMessage("error", ["Health settings not saved", ...(data.errors ?? [])]);
-    return;
-  }
-  applyHealthConfig(data.config);
-  const testOptions = await saveTestOptions();
-  if (!testOptions.ok) {
-    showMessage("error", [
-      "Health settings saved, but execution mode was not saved",
-      ...(testOptions.data.errors ?? []),
-    ]);
-    return;
-  }
-  $("health-source").textContent = "Active source: runtime";
-  showMessage("ok", ["Health settings saved to runtime config."]);
-}
-
-async function resetHealth() {
-  const { ok, data } = await request("/api/config/health/reset", "POST");
-  if (!ok) {
-    showMessage("error", ["Health reset failed", ...(data.errors ?? [])]);
-    return;
-  }
-  applyHealthConfig(data.config);
-  $("health-preset").value = "default";
-  $("health-source").textContent = "Active source: runtime";
-  showMessage("ok", ["Health config reset to default preset."]);
 }
 
 async function openUi() {
@@ -919,8 +884,6 @@ function renderBatch(state) {
 const RUN_CONTROL_IDS = [
   "car-run",
   "health-run",
-  "health-save",
-  "health-reset",
   "api-car-happy",
   "api-car-negative",
   "api-health-happy",
@@ -1232,6 +1195,10 @@ function configForJsonDraft(product) {
 
 function normalizeScenarioConfig(product, config) {
   const normalized = deepClone(config);
+  if (product === "car" && normalized.leadType === "TRANSFER_OF_OWNER_SHIP"
+      && options?.car?.leadTypes?.TRANSFER_OF_OWNERSHIP) {
+    normalized.leadType = "TRANSFER_OF_OWNERSHIP";
+  }
   if (product === "car" && typeof normalized.history?.claims === "string") {
     const claimEntry = Object.entries(options.car.claims).find(([key, label]) =>
       key === normalized.history.claims || label.toLowerCase() === normalized.history.claims.trim().toLowerCase());
@@ -1686,6 +1653,7 @@ async function startRun(target) {
 
   const body = { target };
   if (target.startsWith("car-")) body.config = collectCarConfig();
+  if (target.startsWith("health-")) body.config = collectHealthConfig();
   const { ok, data } = await request("/api/run", "POST", body);
   if (!ok) {
     showMessage("error", [data.errors?.[0] ?? `Could not start ${target}`]);
@@ -1723,9 +1691,6 @@ function wireEvents() {
   // $("car-preset").addEventListener("change", (event) => {
   //   applyCarConfig(carPresets[event.target.value]);
   // });
-  $("health-preset").addEventListener("change", (event) => {
-    applyHealthConfig(healthPresets[event.target.value]);
-  });
 
   $("panel-car").addEventListener("input", updateCarSummary);
   $("car-brand").addEventListener("change", () => {
@@ -1777,8 +1742,6 @@ function wireEvents() {
   $("panel-health").addEventListener("input", updateHealthSummary);
   $("panel-health").addEventListener("change", updateHealthSummary);
 
-  $("health-save").addEventListener("click", saveHealth);
-  $("health-reset").addEventListener("click", resetHealth);
   $("car-add-form-scenario").addEventListener("click", () => addFormAsScenario("car"));
   $("health-add-form-scenario").addEventListener("click", () => addFormAsScenario("health"));
   $("open-ui").addEventListener("click", openUi);
@@ -1830,13 +1793,11 @@ async function init() {
     ]);
     options = optionsData;
     carPresets = options.car.presets;
-    healthPresets = options.health.presets;
 
     populateOptions();
     applyExecutionMode(testOptionsData.options);
     applyCarConfig(carData.config);
     applyHealthConfig(healthData.config);
-    $("health-source").textContent = `Active source: ${healthData.source}`;
     initEditors();
     wireEvents();
     await loadSavedScenarios();

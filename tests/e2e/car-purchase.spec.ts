@@ -96,12 +96,11 @@ test.describe(
         await paymentPage.expectLoaded();
       });
 
-      const gatewayPage = await test.step('Open payment gateway', async () => {
-        return paymentPage.payNow();
+      await test.step('Open payment gateway', async () => {
+        await paymentPage.payNow();
       });
 
-      await test.step('Wait on payment gateway and close browser', async () => {
-        await gatewayPage.waitForTimeout(2_000);
+      await test.step('Close browser on payment gateway', async () => {
         await page.context().close();
       });
     });

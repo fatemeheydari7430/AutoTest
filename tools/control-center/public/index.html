@@ -138,10 +138,14 @@
       </section>
 
       <section id="panel-health" class="panel">
-        <div class="row">
-          <label for="health-preset">Preset</label>
-          <select id="health-preset" class="preset"></select>
-        </div>
+        <header class="health-hero">
+          <div>
+            <span class="health-eyebrow">LOOKINSURE · HEALTH QA</span>
+            <h1>Health insurance test</h1>
+            <p>Configure members and coverage, then run the health flow or save it as a reusable scenario.</p>
+          </div>
+          <div class="health-hero-status"><span class="car-live-dot"></span>QA WORKSPACE</div>
+        </header>
 
         <h2>Current Configuration</h2>
         <div id="health-current-config" class="summary"></div>
@@ -185,12 +189,9 @@
         <div id="health-member-dobs" class="member-dobs grid"></div>
 
         <div class="actions">
-          <button id="health-save" class="primary">Save Configuration</button>
-          <button id="health-reset">Reset Default</button>
-          <button id="health-run">Run Health Test</button>
+          <button id="health-run" class="primary">Run Health Test</button>
           <button id="health-add-form-scenario">Add Current Configuration as Scenario</button>
           <button id="health-json">View / Edit JSON</button>
-          <span id="health-source" class="source"></span>
         </div>
 
         <h2>Last Result</h2>
